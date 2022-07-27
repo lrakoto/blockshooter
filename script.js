@@ -44,18 +44,28 @@ window.addEventListener('DOMContentLoaded', function() {
 
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
         function mouseTrack(ctx, pointX, pointY) {
-            ctx.fillStyle = 'green';
-            ctx.stokeStyle = 'blue';
-            ctx.lineWidth = 1;
-            ctx.fillRect(pointX, pointY, 24, 24);
-            ctx.strokeRect(pointX, pointY, 24, 24);
+            // ctx.fillStyle = 'green';
+            // ctx.stokeStyle = 'blue';
+            // ctx.lineWidth = 1;
+            // ctx.fillRect(pointX, pointY, 24, 24);
+            // ctx.strokeRect(pointX, pointY, 24, 24);
         }
         gameCanvas.addEventListener("mousemove", function(event){
-            mouseTrack(ctx, event.offsetX, event.offsetY)
+            // mouseTrack(ctx, event.offsetX, event.offsetY);
             ctx.beginPath();
             ctx.moveTo(canvasWidth/2, canvasHeight/2);
-            ctx.lineTo(event.offsetX, event.offsetY);
-            ctx.stroke();
+            ctx.lineTo(((canvasWidth/2) + event.offsetX)/2, ((canvasHeight/2) + event.offsetY)/2);
+            ctx.stroke(); // #434554
+        });
+        gameCanvas.addEventListener("mousemove", function(event2){
+            // mouseTrack(ctx, event.offsetX, event.offsetY);
+            // ctx.beginPath();
+            // ctx.moveTo(event2.offsetX, event2.offsetY);
+            // ctx.lineTo(canvasWidth/2, canvasHeight/2);
+            // ctx.strokeStyle = '#434554';
+            // ctx.stroke(); // #434554
+            //function midpoint(x1, y1, x2, y2) {
+	        //return [(x1 + x2) / 2, (y1 + y2) / 2];
         });
         const runGame = this.setInterval(gameLoop, 60);
 
