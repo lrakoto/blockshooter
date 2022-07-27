@@ -8,13 +8,15 @@ window.addEventListener('DOMContentLoaded', function() {
         const weapons = document.querySelector('#weapons');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
+        let cursorPosX = ctx.clientX;
         let playerTurret;
+        console.log(cursorPosX);
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
         gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
-        let canvasWidth = parseInt(getComputedStyle(gameCanvas)['width'])/2;
-        let canvasHeight = parseInt(getComputedStyle(gameCanvas)['height'])/2;
+        let canvasWidth = parseInt(getComputedStyle(gameCanvas)['width']);
+        let canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
         const turretWidth = 50;
         const turretHeight = 50;
         console.log(canvasHeight);
@@ -40,7 +42,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
 
 
-        playerTurret = new Player((canvasWidth-25), (canvasHeight-25), 'black', 50, 50, 100);
+        playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
         function mouseTrack(ctx, pointX, pointY) {
             ctx.fillStyle = 'green';
             ctx.stokeStyle = 'blue';
@@ -50,6 +52,10 @@ window.addEventListener('DOMContentLoaded', function() {
         }
         gameCanvas.addEventListener("mousemove", function(event){
             mouseTrack(ctx, event.offsetX, event.offsetY)
+            ctx.beginPath();
+            ctx.moveTo(canvasWidth/2, canvasHeight/2);
+            ctx.lineTo(event.offsetX, event.offsetY);
+            ctx.stroke();
         });
         const runGame = this.setInterval(gameLoop, 60);
 
