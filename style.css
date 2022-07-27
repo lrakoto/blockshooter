@@ -1,0 +1,41 @@
+body{
+    padding:0;
+    margin:0;
+    padding:5%;
+    background:#434554;
+    color:#62647A;
+    font-family: 'Exo 2', sans-serif;
+}
+
+canvas{
+    width:100%;
+    height:100%;
+}
+
+canvas, aside, div{
+    border:1px solid rgba(255, 255, 255, .1);
+}
+
+#topbar{
+    display: flex;
+}
+
+.score-wrap{
+    width:50%;
+}
+
+.lives-wrap{
+    width:50%;
+}
+
+#bottombar{
+    display: flex;
+}
+
+.health-wrap{
+    width:50%;
+}
+
+.weapons-wrap{
+    width: 50%;
+}
