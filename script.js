@@ -11,10 +11,12 @@ let playerTurret;
 // Canvas Setup
 gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
 gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
-let canvasWidth = getComputedStyle(gameCanvas)['width'];
-let canvasHeight = getComputedStyle(gameCanvas)['height'];
-console.log(canvasHeight/2);
-console.log(canvasWidth/2);
+let canvasWidth = parseInt(getComputedStyle(gameCanvas)['width'])/2;
+let canvasHeight = parseInt(getComputedStyle(gameCanvas)['height'])/2;
+const turretWidth = 50;
+const turretHeight = 50;
+console.log(canvasHeight);
+console.log(canvasWidth);
 
 
 
@@ -38,7 +40,7 @@ class Player {
 
 // Event Listeners
 window.addEventListener('DOMContentLoaded', function() {
-    playerTurret = new Player(canvasHeight/2, canvasWidth/2, 'black', 50, 50, 100);
+    playerTurret = new Player((canvasWidth-25), (canvasHeight-25), 'black', 50, 50, 100);
     const runGame = this.setInterval(gameLoop, 60);
 });
 
