@@ -8,19 +8,29 @@ window.addEventListener('DOMContentLoaded', function() {
         const weapons = document.querySelector('#weapons');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
-        let cursorPosX = ctx.clientX;
+        let cursorPosX;
+        let cursorPosY;
         let playerTurret;
-        console.log(cursorPosX);
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
         gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
         let canvasWidth = parseInt(getComputedStyle(gameCanvas)['width']);
         let canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
-        const turretWidth = 50;
-        const turretHeight = 50;
-        console.log(canvasHeight);
-        console.log(canvasWidth);
+
+        // Add cancas event listeners
+        gameCanvas.addEventListener('mousemove', function (e) {
+            findxy('move', e)
+        }, false);
+        gameCanvas.addEventListener('mousedown', function (e) {
+            findxy('down', e)
+        }, false);
+        gameCanvas.addEventListener('mouseup', function (e) {
+            findxy('up', e)
+        }, false);
+        gameCanvas.addEventListener('mouseout', function (e) {
+            findxy('out', e)
+        }, false);
 
         // Create Classes
         class Player {
@@ -65,7 +75,7 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.stroke();
         }
 
-        // Turret Barrel function
+        // Turret Barrel target function
         function turretTarget(ctx, pointX, pointY) {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 1;
@@ -74,28 +84,40 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.stroke();        
         }
         
+        // Stationary turret and target function
+        function findxy(action, event) {
+            if (action == 'move') {
+                cursorPosX = event.clientX - gameCanvas.offsetLeft;
+                cursorPosY = event.clientY - gameCanvas.offsetTop;
+            }
+        }
+
         // Draw turret barrel
-        gameCanvas.addEventListener("mousemove", function(event){
-            turretBarrel(canvasWidth/2, canvasHeight/2, event.offsetX, event.offsetY, 50);
-            turretTarget(ctx, event.offsetX, event.offsetY);
-        });
         // gameCanvas.addEventListener("mousemove", function(event){
-        //     turretBarrel(ctx, event.offsetX, event.offsetY);
-        //     ctx.beginPath();
-        //     ctx.moveTo(canvasWidth/2, canvasHeight/2);
-        //     ctx.lineTo(((canvasWidth/2) + event.offsetX)/2, ((canvasHeight/2) + event.offsetY)/2);
-        //     ctx.strokeStyle = 'black';
-        //     ctx.stroke(); // #434554
+        //     turretBarrel(canvasWidth/2, canvasHeight/2, event.offsetX, event.offsetY, 50);
+        //     turretTarget(ctx, event.offsetX, event.offsetY);
         // });
+
+        // Turret Fire Action
+        gameCanvas.addEventListener("mousedown", function(event){
+            ctx.beginPath();
+            ctx.moveTo(canvasWidth/2, canvasHeight/2);
+            ctx.lineTo(event.offsetX, event.offsetY);
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        });
 
         // Game loop function
         function gameLoop(){
             ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
             playerTurret.render();
+            turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
+            turretTarget(ctx, cursorPosX, cursorPosY);
         }
 
         // Call game loop
-        const runGame = this.setInterval(gameLoop, 60);
+        const runGame = this.setInterval(gameLoop, 30);
     }
 
 )
