@@ -39,42 +39,63 @@ window.addEventListener('DOMContentLoaded', function() {
                 }
             }
         }
-
-
-
+        // Create new Player instance
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
-        function mouseTrack(ctx, pointX, pointY) {
-            // ctx.fillStyle = 'green';
-            // ctx.stokeStyle = 'blue';
-            // ctx.lineWidth = 1;
-            // ctx.fillRect(pointX, pointY, 24, 24);
-            // ctx.strokeRect(pointX, pointY, 24, 24);
-        }
-        gameCanvas.addEventListener("mousemove", function(event){
-            // mouseTrack(ctx, event.offsetX, event.offsetY);
+       
+        // Turret Barrel with Max length
+        function turretBarrel (x1, y1, x2, y2, maxLen) {
+            var vx = x2 - x1; // get dist between start and end of line
+            var vy = y2 - y1; // for x and y
+        
+            // use pythagoras to get line total length
+            var mag = Math.sqrt(vx * vx + vy * vy); 
+            if (mag > maxLen) { // is the line longer than needed?
+        
+                // calculate how much to scale the line to get the correct distance
+                mag = maxLen / mag;
+                vx *= mag;
+                vy *= mag; 
+            }
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(canvasWidth/2, canvasHeight/2);
-            ctx.lineTo(((canvasWidth/2) + event.offsetX)/2, ((canvasHeight/2) + event.offsetY)/2);
-            ctx.stroke(); // #434554
-        });
-        gameCanvas.addEventListener("mousemove", function(event2){
-            // mouseTrack(ctx, event.offsetX, event.offsetY);
-            // ctx.beginPath();
-            // ctx.moveTo(event2.offsetX, event2.offsetY);
-            // ctx.lineTo(canvasWidth/2, canvasHeight/2);
-            // ctx.strokeStyle = '#434554';
-            // ctx.stroke(); // #434554
-            //function midpoint(x1, y1, x2, y2) {
-	        //return [(x1 + x2) / 2, (y1 + y2) / 2];
-        });
-        const runGame = this.setInterval(gameLoop, 60);
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1 + vx, y1 + vy);
+            ctx.stroke();
+        }
 
+        // Turret Barrel function
+        function turretTarget(ctx, pointX, pointY) {
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(pointX, pointY, 20, 0, 2 * Math.PI);
+            ctx.stroke();        
+        }
+        
+        // Draw turret barrel
+        gameCanvas.addEventListener("mousemove", function(event){
+            turretBarrel(canvasWidth/2, canvasHeight/2, event.offsetX, event.offsetY, 50);
+            turretTarget(ctx, event.offsetX, event.offsetY);
+        });
+        // gameCanvas.addEventListener("mousemove", function(event){
+        //     turretBarrel(ctx, event.offsetX, event.offsetY);
+        //     ctx.beginPath();
+        //     ctx.moveTo(canvasWidth/2, canvasHeight/2);
+        //     ctx.lineTo(((canvasWidth/2) + event.offsetX)/2, ((canvasHeight/2) + event.offsetY)/2);
+        //     ctx.strokeStyle = 'black';
+        //     ctx.stroke(); // #434554
+        // });
 
-        // Game Processes
+        // Game loop function
         function gameLoop(){
             ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
             playerTurret.render();
         }
+
+        // Call game loop
+        const runGame = this.setInterval(gameLoop, 60);
     }
 
 )
