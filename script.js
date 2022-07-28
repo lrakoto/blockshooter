@@ -11,7 +11,9 @@ window.addEventListener('DOMContentLoaded', function() {
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
-
+        let enemyRectRand;
+        let enemyPosX = Math.floor(Math.random() * gameCanvas.width) - 15;
+        let enemyPosY = Math.floor(Math.random() * gameCanvas.height) - 15;
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
         gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
@@ -44,14 +46,32 @@ window.addEventListener('DOMContentLoaded', function() {
                 this.health = health;
 
                 this.render = function() {
-                    ctx.fillRect(x, y, color, width, height, health)
                     ctx.drawImage(this.image, this.x, this.y, this.width, this.height);
                 }
             }
         }
-        // Create new Player instance
+        class Enemy extends Player {
+            constructor(x, y, color, width, height, health, scoreValue) {
+                super(x, y, color, width, height, health);
+                this.scoreValue = scoreValue;
+                this.render = function() {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x, y, width, height);
+                }
+                
+            }
+        }
+
+
+        // Create new class instances
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
-       
+        enemyRectRand = new Enemy(enemyPosX, enemyPosY, 'red', 10, 10, 10, 1000);       
+        
+        // New enemy function
+        function spawnNewEnemy() {
+            enemyRectRand.render();
+        }
+
         // Turret Barrel with Max length
         function turretBarrel (x1, y1, x2, y2, maxLen) {
             var vx = x2 - x1; // get dist between start and end of line
@@ -92,12 +112,6 @@ window.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Draw turret barrel
-        // gameCanvas.addEventListener("mousemove", function(event){
-        //     turretBarrel(canvasWidth/2, canvasHeight/2, event.offsetX, event.offsetY, 50);
-        //     turretTarget(ctx, event.offsetX, event.offsetY);
-        // });
-
         // Turret Fire Action
         gameCanvas.addEventListener("mousedown", function(event){
             ctx.beginPath();
@@ -111,13 +125,17 @@ window.addEventListener('DOMContentLoaded', function() {
         // Game loop function
         function gameLoop(){
             ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            enemyPosX = Math.floor(Math.random() * gameCanvas.width) - 15;
+            enemyPosY = Math.floor(Math.random() * gameCanvas.height) - 15;
             playerTurret.render();
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
+            spawnNewEnemy();
+            // setInterval(spawnNewEnemy, 5000);
         }
 
         // Call game loop
-        const runGame = this.setInterval(gameLoop, 30);
+        setInterval(gameLoop, 30);
     }
 
 )
