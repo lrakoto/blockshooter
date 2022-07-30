@@ -16,12 +16,6 @@ window.addEventListener('DOMContentLoaded', function() {
         let playerTurret;
         let enemyPosX = Math.floor(Math.random() * gameCanvas.width) - 15;
         let enemyPosY = Math.floor(Math.random() * gameCanvas.height) - 15;
-        
-        function pushCords () {
-            xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
-            yCoords.push(Math.floor(Math.random() * gameCanvas.height) - 15);
-        }
-        const newRad = this.setInterval(pushCords, 29);
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
@@ -77,16 +71,21 @@ window.addEventListener('DOMContentLoaded', function() {
         enemyRectRand = new Enemy(enemyPosX, enemyPosY, 'red', 10, 10, 10, 1000);       
 
         // New enemy function
+        function addCoords () {
+            xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
+            yCoords.push(Math.floor(Math.random() * gameCanvas.height) - 15);
+        }
+        this.setInterval(addCoords, 3000);
+
         function spawnNewEnemy() {
             newIndex = newIndex += 1;
-            // for(let i = 0; i < xCoords.length; i++) {
-                function drawLoop() {
-                    ctx.fillRect(xCoords[newIndex], yCoords[newIndex], 15, 15);
-                    ctx.fillStyle = 'red';
-                    console.log('draw');
-                }
-                setInterval(drawLoop, 30);
-            // }
+            function drawLoop(x, y) {
+                ctx.fillRect(x, y, 15, 15);
+                ctx.fillStyle = 'red';
+            }
+            xCoords.forEach((currentValue, arrayIndex) => {
+                drawLoop(currentValue, yCoords[arrayIndex]);
+            });
         }
 
         // Turret Barrel with Max length
@@ -150,7 +149,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // Call game loop
         const runGame = this.setInterval(gameLoop, 30);
-        const runSpawn = this.setInterval(spawnNewEnemy, 3000);
+        const runSpawn = this.setInterval(spawnNewEnemy, 30);
     }
 
 )
