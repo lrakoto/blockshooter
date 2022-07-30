@@ -10,12 +10,11 @@ window.addEventListener('DOMContentLoaded', function() {
         const ctx = gameCanvas.getContext('2d');
         let xCoords = [];
         let yCoords = [];
-        let newIndex = -1;
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
-        let enemyPosX = Math.floor(Math.random() * gameCanvas.width) - 15;
-        let enemyPosY = Math.floor(Math.random() * gameCanvas.height) - 15;
+        let enemyPosX;
+        let enemyPosY;
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
@@ -68,8 +67,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // Create new class instances
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
-        enemyRectRand = new Enemy(enemyPosX, enemyPosY, 'red', 10, 10, 10, 1000);       
-
+        
         // New enemy function
         function addCoords () {
             xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
@@ -78,7 +76,6 @@ window.addEventListener('DOMContentLoaded', function() {
         this.setInterval(addCoords, 3000);
 
         function spawnNewEnemy() {
-            newIndex = newIndex += 1;
             function drawLoop(x, y) {
                 ctx.fillRect(x, y, 15, 15);
                 ctx.fillStyle = 'red';
@@ -129,14 +126,16 @@ window.addEventListener('DOMContentLoaded', function() {
         }
 
         // Turret Fire Action
-        gameCanvas.addEventListener("mousedown", function(event){
+        gameCanvas.addEventListener("mousedown", fireAction);
+
+        function fireAction (event) {
             ctx.beginPath();
             ctx.moveTo(canvasWidth/2, canvasHeight/2);
             ctx.lineTo(event.offsetX, event.offsetY);
             ctx.strokeStyle = 'yellow';
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 2;
             ctx.stroke();
-        });
+        }
 
         // Game loop function
         function gameLoop(){
@@ -144,12 +143,12 @@ window.addEventListener('DOMContentLoaded', function() {
             playerTurret.render();
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
+            spawnNewEnemy();
         }
 
 
         // Call game loop
         const runGame = this.setInterval(gameLoop, 30);
-        const runSpawn = this.setInterval(spawnNewEnemy, 30);
     }
 
 )
