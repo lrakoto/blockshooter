@@ -8,12 +8,21 @@ window.addEventListener('DOMContentLoaded', function() {
         const weapons = document.querySelector('#weapons');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
+        let xCoords = [];
+        let yCoords = [];
+        let newIndex = -1;
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
-        let enemyRectRand;
         let enemyPosX = Math.floor(Math.random() * gameCanvas.width) - 15;
         let enemyPosY = Math.floor(Math.random() * gameCanvas.height) - 15;
+        
+        function pushCords () {
+            xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
+            yCoords.push(Math.floor(Math.random() * gameCanvas.height) - 15);
+        }
+        const newRad = this.setInterval(pushCords, 29);
+
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
         gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
@@ -66,10 +75,18 @@ window.addEventListener('DOMContentLoaded', function() {
         // Create new class instances
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
         enemyRectRand = new Enemy(enemyPosX, enemyPosY, 'red', 10, 10, 10, 1000);       
-        
+
         // New enemy function
         function spawnNewEnemy() {
-            enemyRectRand.render();
+            newIndex = newIndex += 1;
+            // for(let i = 0; i < xCoords.length; i++) {
+                function drawLoop() {
+                    ctx.fillRect(xCoords[newIndex], yCoords[newIndex], 15, 15);
+                    ctx.fillStyle = 'red';
+                    console.log('draw');
+                }
+                setInterval(drawLoop, 30);
+            // }
         }
 
         // Turret Barrel with Max length
@@ -125,17 +142,15 @@ window.addEventListener('DOMContentLoaded', function() {
         // Game loop function
         function gameLoop(){
             ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            enemyPosX = Math.floor(Math.random() * gameCanvas.width) - 15;
-            enemyPosY = Math.floor(Math.random() * gameCanvas.height) - 15;
             playerTurret.render();
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
-            spawnNewEnemy();
-            // setInterval(spawnNewEnemy, 5000);
         }
 
+
         // Call game loop
-        setInterval(gameLoop, 30);
+        const runGame = this.setInterval(gameLoop, 30);
+        const runSpawn = this.setInterval(spawnNewEnemy, 3000);
     }
 
 )
