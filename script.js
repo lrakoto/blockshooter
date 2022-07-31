@@ -2,7 +2,7 @@
 window.addEventListener('DOMContentLoaded', function() {
         // Grab DOM Elements
         const gameCanvas = document.querySelector('#gamecanvas');
-        const score = document.querySelector('#score');
+        const scoreBoard = document.querySelector('#score');
         const lives = document.querySelector('#lives');
         const health = document.querySelector('#health');
         const weapons = document.querySelector('#weapons');
@@ -13,8 +13,7 @@ window.addEventListener('DOMContentLoaded', function() {
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
-        let enemyPosX;
-        let enemyPosY;
+        let enemyCoords = {};
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
@@ -127,7 +126,6 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // Turret Fire Action
         gameCanvas.addEventListener("mousedown", fireAction);
-
         function fireAction (event) {
             ctx.beginPath();
             ctx.moveTo(canvasWidth/2, canvasHeight/2);
@@ -135,6 +133,31 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.strokeStyle = 'yellow';
             ctx.lineWidth = 2;
             ctx.stroke();
+            xCoords.forEach((value, index) => {
+                let rules = 
+                event.offsetX >= (value - 15) && 
+                event.offsetX <= (value + 15) &&
+                event.offsetY >= (yCoords[index] - 15) &&
+                event.offsetY <= (yCoords[index] + 15)
+                ;
+                if(rules) {
+                    console.log('Hit!');
+                    xCoords.forEach((value, index, arr) => {
+                        if(event.offsetX >= (value - 15) && event.offsetX <= (value + 15)) {
+                            arr[index] = 30000;
+                            console.log('enemy removed');
+                        }
+                    });
+                    yCoords.forEach((value, index, arr) => {
+                        if(event.offsetY >= (yCoords[index] - 15) && event.offsetY <= (yCoords[index] + 15)) {
+                            arr[index] = 30000;
+                            console.log('enemy removed');
+                        }
+                    });
+                } else {
+                    console.log('Miss!')
+                }
+            })
         }
 
         // Game loop function
@@ -144,6 +167,7 @@ window.addEventListener('DOMContentLoaded', function() {
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
             spawnNewEnemy();
+            //let targetHit = detectHit(x, y)
         }
 
 
