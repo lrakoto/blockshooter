@@ -13,6 +13,7 @@ window.addEventListener('DOMContentLoaded', function() {
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
+        let difficulty = 2000;
         let enemyCoords = {};
 
         // Canvas Setup
@@ -72,11 +73,11 @@ window.addEventListener('DOMContentLoaded', function() {
             xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
             yCoords.push(Math.floor(Math.random() * gameCanvas.height) - 15);
         }
-        this.setInterval(addCoords, 3000);
+        this.setInterval(addCoords, difficulty);
 
         function spawnNewEnemy() {
             function drawLoop(x, y) {
-                ctx.fillRect(x, y, 15, 15);
+                ctx.fillRect((x - 7), (y - 7), 15, 15);
                 ctx.fillStyle = 'red';
             }
             xCoords.forEach((currentValue, arrayIndex) => {
@@ -135,21 +136,21 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.stroke();
             xCoords.forEach((value, index) => {
                 let rules = 
-                event.offsetX >= (value - 15) && 
-                event.offsetX <= (value + 15) &&
-                event.offsetY >= (yCoords[index] - 15) &&
-                event.offsetY <= (yCoords[index] + 15)
+                event.offsetX >= (value - 8) && 
+                event.offsetX <= (value + 8) &&
+                event.offsetY >= (yCoords[index] - 8) &&
+                event.offsetY <= (yCoords[index] + 8)
                 ;
                 if(rules) {
                     console.log('Hit!');
                     xCoords.forEach((value, index, arr) => {
-                        if(event.offsetX >= (value - 15) && event.offsetX <= (value + 15)) {
+                        if(event.offsetX >= (value - 8) && event.offsetX <= (value + 8)) {
                             arr[index] = 30000;
                             console.log('enemy removed');
                         }
                     });
                     yCoords.forEach((value, index, arr) => {
-                        if(event.offsetY >= (yCoords[index] - 15) && event.offsetY <= (yCoords[index] + 15)) {
+                        if(event.offsetY >= (yCoords[index] - 8) && event.offsetY <= (yCoords[index] + 8)) {
                             arr[index] = 30000;
                             console.log('enemy removed');
                         }
@@ -160,6 +161,17 @@ window.addEventListener('DOMContentLoaded', function() {
             })
         }
 
+        // Raise difficulty as game progresses;
+        function diffChecker() {
+            if(xCoords.length > 9) {
+                difficulty = 400;
+            } else if (xCoords.length > 6 && xCoords.length < 9) {
+                difficulty = 800;
+            } else if (xCoords.length > 3 && xCoords.length < 6) {
+                difficulty = 1000;
+            } else {difficulty = 2000}
+        }
+
         // Game loop function
         function gameLoop(){
             ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
@@ -167,6 +179,8 @@ window.addEventListener('DOMContentLoaded', function() {
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
             spawnNewEnemy();
+            diffChecker();
+            console.log(xCoords.length);
             //let targetHit = detectHit(x, y)
         }
 
