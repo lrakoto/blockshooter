@@ -67,33 +67,6 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // Create new class instances
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
-        
-        // Movement calculations
-        let speed = 5;
-        let p1 = {x:20,y:20};
-        let p2 = {x:(canvasWidth/2), y:(canvasHeight/2)};
-        let dx = p2.x - p1.x;
-        let dy = p2.y - p1.y;
-        let distance = Math.sqrt(dx*dx + dy*dy);
-        let moves = distance/speed;
-        let xunits = (p2.x - p1.x)/moves;
-        let yunits = (p2.y - p1.y)/moves;
-        let ball = {x:p1.x, y:p1.y};
-        let points = new Array();
-
-        function  moveEnemies () {
-            if (moves > 0 ) {
-              moves--;
-              ball.x += xunits;
-              ball.y += yunits;
-            }
-            points.push({x:ball.x,y:ball.y});
-            
-            ctx.fillStyle = "#000000";
-            ctx.arc(ball.x,ball.y,15,0,Math.PI*2,true);
-            ctx.closePath();
-            ctx.fill();       
-        }
 
         // New enemy function
         function addCoords () {
@@ -106,7 +79,7 @@ window.addEventListener('DOMContentLoaded', function() {
         //     console.log(difficulty);
         //     this.setInterval(addCoords, difficulty);
         // }
-        // this.setInterval(setDifficulty, 3000);
+        // this.setInterval(setDifficulty, 3000);        
 
         function spawnNewEnemy() {
             function drawLoop(x, y) {
@@ -117,6 +90,19 @@ window.addEventListener('DOMContentLoaded', function() {
                 drawLoop(currentValue, yCoords[arrayIndex]);
             });
         }
+
+        // Enemy movement 
+        function moveEnemy () {
+            for(i = 0; i < xCoords.length; i++) {
+                let storedValueX = xCoords[i];
+                let storedValueY = yCoords[i];
+                xCoords.splice(i, 1);
+                xCoords.splice(i, 0, storedValueX += 1);
+                yCoords.splice(i, 1);
+                yCoords.splice(i, 0, storedValueY += 1);
+            }
+        }
+        this.setInterval(moveEnemy, 500);
 
         // Turret Barrel with Max length
         function turretBarrel (x1, y1, x2, y2, maxLen) {
@@ -207,8 +193,7 @@ window.addEventListener('DOMContentLoaded', function() {
             playerTurret.render();
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
-            spawnNewEnemy();
-            moveEnemies();
+            spawnNewEnemy();   
         }
 
         // Call game loop
