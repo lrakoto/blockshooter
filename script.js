@@ -68,6 +68,33 @@ window.addEventListener('DOMContentLoaded', function() {
         // Create new class instances
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
         
+        // Movement calculations
+        let speed = 5;
+        let p1 = {x:20,y:20};
+        let p2 = {x:(canvasWidth/2), y:(canvasHeight/2)};
+        let dx = p2.x - p1.x;
+        let dy = p2.y - p1.y;
+        let distance = Math.sqrt(dx*dx + dy*dy);
+        let moves = distance/speed;
+        let xunits = (p2.x - p1.x)/moves;
+        let yunits = (p2.y - p1.y)/moves;
+        let ball = {x:p1.x, y:p1.y};
+        let points = new Array();
+
+        function  moveEnemies () {
+            if (moves > 0 ) {
+              moves--;
+              ball.x += xunits;
+              ball.y += yunits;
+            }
+            points.push({x:ball.x,y:ball.y});
+            
+            ctx.fillStyle = "#000000";
+            ctx.arc(ball.x,ball.y,15,0,Math.PI*2,true);
+            ctx.closePath();
+            ctx.fill();       
+        }
+
         // New enemy function
         function addCoords () {
             xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
@@ -181,6 +208,7 @@ window.addEventListener('DOMContentLoaded', function() {
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
             spawnNewEnemy();
+            moveEnemies();
         }
 
         // Call game loop
