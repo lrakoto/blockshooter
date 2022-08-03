@@ -8,12 +8,13 @@ window.addEventListener('DOMContentLoaded', function() {
         const weapons = document.querySelector('#weapons');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
+        let score = 0;
         let xCoords = [];
         let yCoords = [];
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
-        let difficulty = 1000;
+        let difficulty = 2500;
         let enemyCoords = {};
 
         // Canvas Setup
@@ -63,7 +64,6 @@ window.addEventListener('DOMContentLoaded', function() {
                 
             }
         }
-
 
         // Create new class instances
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
@@ -134,12 +134,22 @@ window.addEventListener('DOMContentLoaded', function() {
         // Turret Fire Action
         gameCanvas.addEventListener("mousedown", fireAction);
         function fireAction (event) {
-            ctx.beginPath();
-            ctx.moveTo(canvasWidth/2, canvasHeight/2);
-            ctx.lineTo(event.offsetX, event.offsetY);
-            ctx.strokeStyle = 'yellow';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            function fireLoop(){
+                ctx.beginPath();
+                ctx.moveTo(canvasWidth/2, canvasHeight/2);
+                ctx.lineTo(cursorPosX, cursorPosY);
+                ctx.strokeStyle = 'yellow';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
+            }
+            function stopLoop(){
+                clearInterval(fireInterval);
+            }
+            const fireInterval = setInterval(fireLoop, 10);
+            setTimeout(stopLoop, 50);
+            
+            // gameCanvas.addEventListener("mouseup", stopLoop);
             xCoords.forEach((value, index) => {
                 let rules = 
                 event.offsetX >= (value - 8) && 
@@ -148,19 +158,18 @@ window.addEventListener('DOMContentLoaded', function() {
                 event.offsetY <= (yCoords[index] + 8)
                 ;
                 if(rules) {
-                    console.log('Hit!')
                     xCoords.forEach((value, index, arr) => {
-                        if(event.offsetX >= (value - 3) && event.offsetX <= (value + 3)) {
+                        if(event.offsetX >= (value - 4) && event.offsetX <= (value + 4) && event.offsetY >= (yCoords[index] - 4) && event.offsetY <= (yCoords[index] + 4)) {
                             arr[arr.indexOf(value)] = 30000;
                         }
                     });
                     yCoords.forEach((value, index, arr) => {
-                        if(event.offsetY >= (yCoords[index] - 3) && event.offsetY <= (yCoords[index] + 3)) {
+                        if(event.offsetY >= (yCoords[index] - 4) && event.offsetY <= (yCoords[index] + 4) && event.offsetX >= (value - 4) && event.offsetX <= (value + 4) && event.offsetY >= (yCoords[index] - 4)) {
                             arr[arr.indexOf(value)] = 30000;
                         }
                     });
-                } else {
-                    console.log('Miss!')
+                    score = score += 100;
+                    scoreBoard.textContent = score;
                 }
             })
         }
@@ -173,7 +182,6 @@ window.addEventListener('DOMContentLoaded', function() {
             turretTarget(ctx, cursorPosX, cursorPosY);
             spawnNewEnemy();
         }
-
 
         // Call game loop
         const runGame = this.setInterval(gameLoop, 30);
