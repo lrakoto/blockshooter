@@ -96,10 +96,16 @@ window.addEventListener('DOMContentLoaded', function() {
             for(i = 0; i < xCoords.length; i++) {
                 let storedValueX = xCoords[i];
                 let storedValueY = yCoords[i];
+                let point = {X: storedValueX, Y: storedValueY};
+                let target = {X:canvasWidth/2, Y:canvasHeight/2};
+                let angle = Math.atan2(target.Y - point.Y, target.X - point.X);
+                let perFrameDistance = 2;
+                let sin = Math.sin(angle) * perFrameDistance;
+                let cos = Math.cos(angle) * perFrameDistance;
                 xCoords.splice(i, 1);
-                xCoords.splice(i, 0, storedValueX += 1);
+                xCoords.splice(i, 0, storedValueX += cos);
                 yCoords.splice(i, 1);
-                yCoords.splice(i, 0, storedValueY += 1);
+                yCoords.splice(i, 0, storedValueY += sin);
             }
         }
         this.setInterval(moveEnemy, 500);
