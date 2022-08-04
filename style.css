@@ -1,16 +1,33 @@
 body{
     padding:0;
     margin:0;
-    padding:5%;
-    background:#434554;
+    background:black;
     color:#62647A;
     font-family: 'Exo 2', sans-serif;
 }
 
+h1{
+    position:absolute;
+    left:calc(50vw - 140px);
+    text-align: center;
+    color:#fff;
+    width:280px;
+    background: rgba(255, 255, 255, .1);
+    background: rgb(255,255,255);
+    background: linear-gradient(0deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 1%, rgba(255,255,255,.7) 100%);
+    pointer-events: none;
+    padding:20px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, .2);
+}
+
 canvas{
     width:100%;
-    height:70vh;
-    
+    height:100vh;
+    background: url(./images/pattern-02.png);
+    background-repeat: repeat;
+    background-size: 100px;
+    background-position: center center;
+    z-index:1;
 }
 
 canvas, aside, div{
@@ -19,18 +36,38 @@ canvas, aside, div{
 
 #topbar{
     display: flex;
+    justify-content: space-between;
+    position:absolute;
+    width:100%;
+    pointer-events: none;
+    margin-top:20px;
 }
 
 .score-wrap{
-    width:50%;
+    position:relative;
+    padding:27px;
+    background: rgb(255,255,255);
+    background: linear-gradient(90deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 100%);
+    color:#1bffc1;
+    font-weight: 900;
+    width:10vw;
 }
 
 .lives-wrap{
-    width:50%;
+    position:relative;
+    padding:27px;
+    background: rgb(255,255,255);
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.5) 100%);
+    color:#1bffc1;
+    font-weight: 900;
+    width:10vw;
+    text-align: right;
 }
 
 #bottombar{
     display: flex;
+    position:absolute;
+    bottom:0px;
 }
 
 .health-wrap{

@@ -4,17 +4,19 @@ window.addEventListener('DOMContentLoaded', function() {
         const gameCanvas = document.querySelector('#gamecanvas');
         const scoreBoard = document.querySelector('#score');
         const lives = document.querySelector('#lives');
-        const health = document.querySelector('#health');
+        const healthBar = document.querySelector('#health');
         const weapons = document.querySelector('#weapons');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
-        let score = 0;
+        let score = 000000;
+        let health = 100;
         let xCoords = [];
         let yCoords = [];
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
         let difficulty = 2500;
+        let perFrameDistance = .1;
         let enemyCoords = {};
 
         // Canvas Setup
@@ -99,7 +101,6 @@ window.addEventListener('DOMContentLoaded', function() {
                 let point = {X: storedValueX, Y: storedValueY};
                 let target = {X:canvasWidth/2, Y:canvasHeight/2};
                 let angle = Math.atan2(target.Y - point.Y, target.X - point.X);
-                let perFrameDistance = 2;
                 let sin = Math.sin(angle) * perFrameDistance;
                 let cos = Math.cos(angle) * perFrameDistance;
                 xCoords.splice(i, 1);
@@ -108,7 +109,28 @@ window.addEventListener('DOMContentLoaded', function() {
                 yCoords.splice(i, 0, storedValueY += sin);
             }
         }
-        this.setInterval(moveEnemy, 500);
+        this.setInterval(moveEnemy, 20);
+
+        // Scale difficulty
+        function diffFn(){
+            if(score === 500) {
+                perFrameDistance = .2;
+                console.log(perFrameDistance);
+            } else if(score === 1000) {
+                perFrameDistance = .4;
+                console.log(perFrameDistance);
+            } else if(score === 1500) {
+                perFrameDistance = .6;
+                console.log(perFrameDistance);
+            } else if(score === 2500) {
+                perFrameDistance = .7;
+                console.log(perFrameDistance);
+            } else if(score === 3000) {
+                perFrameDistance = .9;
+                console.log(perFrameDistance);
+            }
+            
+        }
 
         // Turret Barrel with Max length
         function turretBarrel (x1, y1, x2, y2, maxLen) {
@@ -169,6 +191,8 @@ window.addEventListener('DOMContentLoaded', function() {
             setTimeout(stopLoop, 50);
             
             // gameCanvas.addEventListener("mouseup", stopLoop);
+            
+            // Shoot hit detection
             xCoords.forEach((value, index) => {
                 let rules = 
                 event.offsetX >= (value - 8) && 
@@ -199,7 +223,31 @@ window.addEventListener('DOMContentLoaded', function() {
             playerTurret.render();
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
             turretTarget(ctx, cursorPosX, cursorPosY);
-            spawnNewEnemy();   
+            spawnNewEnemy();
+            diffFn();
+            // Enemy hits player detection
+            xCoords.forEach((value, index) => {
+                let rules = 
+                value >= ((canvasWidth/2) - 15) && 
+                value <= ((canvasWidth/2) + 15) &&
+                yCoords[index] >= ((canvasHeight/2) - 15) &&
+                yCoords[index] <= ((canvasHeight/2) + 15)
+                ;
+                if(rules) {
+                    xCoords.forEach((value, index, arr) => {
+                        if(value >= ((canvasWidth/2) - 15) && value <= ((canvasWidth/2) + 15) && yCoords[index] >= ((canvasHeight/2) - 15) & yCoords[index] <= ((canvasHeight/2) + 15)) {
+                            xCoords[xCoords.indexOf(value)] = 30000;
+                        }
+                    });
+                    yCoords.forEach((value, index, arr) => {
+                        if(value >= ((canvasWidth/2) - 15) && value <= ((canvasWidth/2) + 15) && yCoords[index] >= ((canvasHeight/2) - 15) && yCoords[index] <= ((canvasHeight/2) + 15)) {
+                            yCoords[yCoords.indexOf(value)] = 30000;
+                        }
+                    });
+                    health = health -= 10;
+                    healthBar.textContent = `${health}%`;
+                }
+            });   
         }
 
         // Call game loop
