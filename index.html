@@ -14,16 +14,16 @@
     <main>
         <h1>Block Shooter</h1>
         <section id="topbar">
-            <div class="score-wrap" id="score">0</div>
-            <div class="lives-wrap" id="lives">3</div>
+            <div class="score-wrap">SCORE: <span id="score">0</span></div>
+            <div class="lives-wrap"><span id="lives">3</span> LIVES</div>
         </section>
         <img src="./images/turret.webp" alt="turret" id="turret" style="display: none;">
         <canvas id="gamecanvas">
             <!--GAME GOES HERE-->
         </canvas>
+        <h3>HEALTH</h3>
         <section id="bottombar">
-            <div class="health-wrap" id="health">100%</div>
-            <div class="weapons-wrap" id="weapons">Gun</div>
+            <div class="health-wrap" id="health"></div>
         </section>
     </main>
     <script src="./script.js"></script>

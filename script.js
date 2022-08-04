@@ -5,7 +5,6 @@ window.addEventListener('DOMContentLoaded', function() {
         const scoreBoard = document.querySelector('#score');
         const lives = document.querySelector('#lives');
         const healthBar = document.querySelector('#health');
-        const weapons = document.querySelector('#weapons');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
         let score = 000000;
@@ -85,8 +84,8 @@ window.addEventListener('DOMContentLoaded', function() {
 
         function spawnNewEnemy() {
             function drawLoop(x, y) {
-                ctx.fillRect((x - 7), (y - 7), 15, 15);
-                ctx.fillStyle = 'red';
+                ctx.fillRect((x - 7), (y - 7), 14, 14);
+                ctx.fillStyle = '#1bffc1';
             }
             xCoords.forEach((currentValue, arrayIndex) => {
                 drawLoop(currentValue, yCoords[arrayIndex]);
@@ -155,6 +154,29 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.stroke();
         }
 
+        // Turret Muzzle Flash
+        function turretBarrelFlash (x1, y1, x2, y2, maxLen) {
+            var vx = x2 - x1; // get dist between start and end of line
+            var vy = y2 - y1; // for x and y
+        
+            // use pythagoras to get line total length
+            var mag = Math.sqrt(vx * vx + vy * vy); 
+            if (mag > maxLen) { // is the line longer than needed?
+        
+                // calculate how much to scale the line to get the correct distance
+                mag = maxLen / mag;
+                vx *= mag;
+                vy *= mag; 
+            }
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1 + vx, y1 + vy);
+            ctx.stroke();
+        }
+
         // Turret Barrel target function
         function turretTarget(ctx, pointX, pointY) {
             ctx.strokeStyle = 'red';
@@ -182,7 +204,8 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.strokeStyle = 'yellow';
                 ctx.lineWidth = 1;
                 ctx.stroke();
-                turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
+                turretBarrelFlash(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 30);
+                turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
             }
             function stopLoop(){
                 clearInterval(fireInterval);
@@ -221,7 +244,7 @@ window.addEventListener('DOMContentLoaded', function() {
         function gameLoop(){
             ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
             playerTurret.render();
-            turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 50);
+            turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
             turretTarget(ctx, cursorPosX, cursorPosY);
             spawnNewEnemy();
             diffFn();
@@ -244,8 +267,8 @@ window.addEventListener('DOMContentLoaded', function() {
                             yCoords[yCoords.indexOf(value)] = 30000;
                         }
                     });
-                    health = health -= 10;
-                    healthBar.textContent = `${health}%`;
+                    health = health -= 5;
+                    healthBar.style.width = `${health}%`;
                 }
             });   
         }
