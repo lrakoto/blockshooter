@@ -66,19 +66,8 @@
                 }
             }
         }
-        class Enemy extends Player {
-            constructor(x, y, color, width, height, health, scoreValue) {
-                super(x, y, color, width, height, health);
-                this.scoreValue = scoreValue;
-                this.render = function() {
-                    ctx.fillStyle = color;
-                    ctx.fillRect(x, y, width, height);
-                }
-                
-            }
-        }
 
-        // Create new class instances
+        // Create player class instance
         playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
 
         // New enemy function
@@ -86,13 +75,7 @@
             xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
             yCoords.push(Math.floor(Math.random() * gameCanvas.height) - 15);
         }
-        this.setInterval(addCoords, difficulty);
-        // function setDifficulty(){
-        //     difficulty = difficulty -= 10;
-        //     console.log(difficulty);
-        //     this.setInterval(addCoords, difficulty);
-        // }
-        // this.setInterval(setDifficulty, 3000);        
+        this.setInterval(addCoords, difficulty);       
 
         function spawnNewEnemy() {
             function drawLoop(x, y) {
@@ -206,7 +189,7 @@
         // Turret Fire Action
         gameCanvas.addEventListener("mousedown", fireAction);
         function fireAction (event) {
-            laserSound.play();
+            // laserSound.play();
             function fireLoop(){
                 ctx.beginPath();
                 ctx.moveTo(canvasWidth/2, canvasHeight/2);
@@ -223,6 +206,7 @@
             const fireInterval = setInterval(fireLoop, 10);
             setTimeout(stopLoop, 50);
             
+            // Leaving this here for future reference
             // gameCanvas.addEventListener("mouseup", stopLoop);
             
             // Shoot hit detection
