@@ -6,15 +6,46 @@ body{
     font-family: 'Exo 2', sans-serif;
 }
 
+#winmenu, #losemenu{
+    display:none;
+    width:100vw;
+    height:100vh;
+    z-index:7;
+    padding: 10% 15%;
+    box-sizing: border-box;
+    position: absolute;
+    margin: 0 auto;
+}
+
 #startmenu {
     display:block;
-    width:70vh;
-    height:70vw;
+    width:100vw;
+    height:100vh;
     z-index:7;
-    padding: 4%;
-    background:linear-gradient(0deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 1%, rgba(255,255,255,.7) 100%);
+    padding: 10% 15%;
+    box-sizing: border-box;
     position: absolute;
+    margin: 0 auto;
+}
 
+.cubeimg{
+    background: url(./images/cube.jpeg);
+    background-size: cover;
+    background-position: center center;
+    width: 55vw;
+    margin-right:50px;
+}
+
+.innerwrap{
+    background: rgb(255,255,255);
+    background: linear-gradient(90deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 100%);
+    box-sizing: border-box;
+    padding:7%;
+    height: 70vh;
+    border-radius: 4px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
+    color:#fff;
+    display:flex;
 }
 
 h1{
@@ -41,6 +72,7 @@ h3{
     font-weight:200;
     font-size:.7em;
     letter-spacing: 7px;
+    display:none;
 }
 
 canvas{
@@ -53,7 +85,7 @@ canvas{
     z-index:1;
 }
 
-canvas, aside, div{
+canvas, aside, .bord{
     border:1px solid rgba(255, 255, 255, .1);
 }
 
@@ -109,4 +141,11 @@ canvas, aside, div{
     display:block;
     background: #1bffc1;
     border-radius: 50px;
+}
+
+button{
+    padding:12px 30px;
+    text-transform: uppercase;
+    letter-spacing: 12px;
+    font-size:.7em;
 }

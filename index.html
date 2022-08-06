@@ -13,15 +13,48 @@
 <body>
     <main>
         <h1>Block Shooter</h1>
+        <section id="winmenu">
+            <div class="innerwrap bord">
+                <div>
+                    <h4>Congrationlations!</h4>
+                    <p>All blocks cleared!</p>
+                    <button id="returntomenuwin">Return To Main Menu</button>
+                    <button id="resetwin">Play Again</button>
+                </div>
+            </div>
+        </section>
+        <section id="losemenu">
+            <div class="innerwrap bord">
+                <div>
+                    <h4>You died.</h4>
+                    <p>Game Over.</p>
+                    <button id="returntomenulose">Return To Main Menu</button>
+                    <button id="resetlose">Try Again</button>
+                </div>
+            </div>
+        </section>
+        <section id="startmenu">
+            <div class="innerwrap bord">
+                <div class="cubeimg"></div>
+                <div>
+                    <h4>Welcome Cadet!</h4>
+                    <p>Evil green blocks have invaded this quadrant! Your job is to eliminate them and restore peace to this quadrant. The blocks have somehow developed the ability to teleport directly within local quadrants, but fortunately their targeting systems are unable to pinpoint exact coordinates. They will be many, they will be constant.</p>
+                    <p>Our engineers have been hard at work developing a state of the art photon cannon. This means precision and an almost instantaneous payload delivery, but zero splash damage. You have to be dead on. Get in gear cadet, let's clear this quadrant of blocks!</p>
+                    <h4>Instructions</h4>
+                    <p>Aim with the mouse, left click to fire! Score 3000 to win</p>
+                    <button id="startbutton">Deploy</button>
+                </div>
+            </div>
+        </section>
         <section id="topbar">
-            <div class="score-wrap">SCORE: <span id="score">0</span></div>
-            <div class="lives-wrap"><span id="lives">3</span> LIVES</div>
+            <div class="score-wrap bord">SCORE: <span id="score">0</span></div>
+            <div class="lives-wrap bord"><span id="lives">3</span> LIVES</div>
         </section>
         <img src="./images/turret.webp" alt="turret" id="turret" style="display: none;">
         <canvas id="gamecanvas">
             <!--GAME GOES HERE-->
         </canvas>
-        <h3>HEALTH</h3>
+        <h3 id="healthtext">HEALTH</h3>
         <section id="bottombar">
             <div class="health-wrap" id="health"></div>
         </section>

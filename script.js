@@ -1,12 +1,24 @@
 // Main event listener
-window.addEventListener('DOMContentLoaded', function() {
+    window.addEventListener('DOMContentLoaded', function() {
         // Grab DOM Elements
         const gameCanvas = document.querySelector('#gamecanvas');
+        const startMenu = document.querySelector('#startmenu');
+        const winMenu = document.querySelector('#winmenu');
+        const loseMenu = document.querySelector('#losemenu');
+        const returnMenuWin = document.querySelector('#returntomenuwin');
+        const returnMenuLose = document.querySelector('#returntomenulose');
+        const resetWin = document.querySelector('#resetwin');
+        const resetLose = document.querySelector('#resetlose');
+        const topBar = document.querySelector('#topbar');
+        const bottomBar = document.querySelector('#bottombar');
+        const healthText = document.querySelector('#healthtext');
         const scoreBoard = document.querySelector('#score');
+        const startButton = document.querySelector('#startbutton');
         const lives = document.querySelector('#lives');
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
+        let gameStartInt;
         let score = 0;
         let health = 100;
         let xCoords = [];
@@ -14,9 +26,8 @@ window.addEventListener('DOMContentLoaded', function() {
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
-        let difficulty = 2500;
-        let perFrameDistance = .1;
-        let enemyCoords = {};
+        let difficulty = 1000;
+        let perFrameDistance = .3;
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
@@ -115,13 +126,13 @@ window.addEventListener('DOMContentLoaded', function() {
             if(score === 500) {
                 perFrameDistance = .2;
             } else if(score === 1000) {
-                perFrameDistance = .4;
+                perFrameDistance = .3;
             } else if(score === 1500) {
-                perFrameDistance = .6;
+                perFrameDistance = .4;
             } else if(score === 2500) {
-                perFrameDistance = .7;
+                perFrameDistance = .5;
             } else if(score === 3000) {
-                perFrameDistance = .9;
+                perFrameDistance = .6;
             } else if(score >= 4000) {
                 perFrameDistance = perFrameDistance += .01;
             }
@@ -237,20 +248,13 @@ window.addEventListener('DOMContentLoaded', function() {
         }
 
         // Score Tally
-        function addScore(){
+        function addScore() {
             score = score += 100;
             scoreBoard.textContent = score;
         }
 
-        // Game loop function
-        function gameLoop(){
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            playerTurret.render();
-            turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
-            turretTarget(ctx, cursorPosX, cursorPosY);
-            spawnNewEnemy();
-            diffFn();
-            // Enemy hits player detection
+        // Enemy hits player detection
+        function hitDetect() {
             xCoords.forEach((value, index) => {
                 let rules = 
                 value >= ((canvasWidth/2) - 15) && 
@@ -269,17 +273,115 @@ window.addEventListener('DOMContentLoaded', function() {
                             yCoords[yCoords.indexOf(value)] = 30000;
                         }
                     });
-                    health = health -= 5;
-                    healthBar.style.width = `${health}%`;
+                    takeHealth();
                 }
-            }); 
-            while(score >= 500) {
-                youLose();
-            } 
+            });
         }
-        // Call game loop
-        setInterval(gameLoop, 30);
-        function youLose() {clearInterval(gameLoop)}
+
+        // Remove Health
+        function takeHealth() {
+            health = health -= 5;
+            healthBar.style.width = `${health}%`; 
+        }
+
+        // Game loop function
+        function gameLoop(){
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            playerTurret.render();
+            turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
+            turretTarget(ctx, cursorPosX, cursorPosY);
+            spawnNewEnemy();
+            // diffFn(); 
+            hitDetect();
+            if(score >= 4000 && health > 0) {
+                gameWin();
+            } else if (health <= 1) {
+                gameLose();
+            }
+        }
+
+        // Game functions
+        startButton.addEventListener('click', closeMenu);
+        returnMenuWin.addEventListener('click', startScreenWin);
+        returnMenuLose.addEventListener('click', startScreenLose);
+        resetWin.addEventListener('click', resetGameWin);
+        resetLose.addEventListener('click', resetGameLose);
+        
+        function defaults() {
+            xCoords = [];
+            yCoords = [];
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            scoreBoard.textContent = '0'
+            score = 0;
+            health = 100;
+        }
+
+        function resetGameWin() {
+            winMenu.style.display = 'none';
+            bottomBar.style.display = 'flex';
+            topBar.style.display = 'flex';
+            healthText.style.display = 'inline-block';
+            defaults();
+            gameStartInt = setInterval(gameLoop, 30);
+        }
+        function resetGameLose() {
+            loseMenu.style.display = 'none';
+            bottomBar.style.display = 'flex';
+            topBar.style.display = 'flex';
+            healthText.style.display = 'inline-block';
+            defaults();
+            gameStartInt = setInterval(gameLoop, 30);
+        }
+        function startScreenWin() {
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            winMenu.style.display = 'none';
+            startMenu.style.display = 'block'
+            bottomBar.style.display = 'none';
+            topBar.style.display = 'none';
+            healthText.style.display = 'none';
+            defaults();
+        }
+        function startScreenLose() {
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            loseMenu.style.display = 'none';
+            startMenu.style.display = 'block'
+            bottomBar.style.display = 'none';
+            topBar.style.display = 'none';
+            healthText.style.display = 'none';
+            defaults();
+        }
+        function winScreen() {
+            winMenu.style.display = 'block';
+            bottomBar.style.display = 'none';
+            topBar.style.display = 'none';
+            healthText.style.display = 'none';
+        }
+        function loseScreen() {
+            loseMenu.style.display = 'block';
+            bottomBar.style.display = 'none';
+            topBar.style.display = 'none';
+            healthText.style.display = 'none';
+        }
+        function closeMenu() {
+            startMenu.style.display = 'none';
+            bottomBar.style.display = 'flex';
+            topBar.style.display = 'flex';
+            healthText.style.display = 'inline-block';
+            health = 100;
+            score = 0;
+            gameStartInt = setInterval(gameLoop, 30);
+        }
+        
+        
+        // End States
+        function gameWin() {
+            winScreen();
+            clearInterval(gameStartInt);
+        }
+        function gameLose() {
+            loseScreen();
+            clearInterval(gameStartInt);
+        }
     }
 
 )
