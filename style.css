@@ -6,6 +6,17 @@ body{
     font-family: 'Exo 2', sans-serif;
 }
 
+#startmenu {
+    display:block;
+    width:70vh;
+    height:70vw;
+    z-index:7;
+    padding: 4%;
+    background:linear-gradient(0deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 1%, rgba(255,255,255,.7) 100%);
+    position: absolute;
+
+}
+
 h1{
     position:absolute;
     left:calc(50vw - 140px);
@@ -47,7 +58,7 @@ canvas, aside, div{
 }
 
 #topbar{
-    display: flex;
+    display: none;
     justify-content: space-between;
     position:absolute;
     width:100%;
@@ -81,7 +92,7 @@ canvas, aside, div{
 }
 
 #bottombar{
-    display: flex;
+    display: none;
     position:absolute;
     bottom:0px;
     width:90vw;

@@ -7,7 +7,7 @@ window.addEventListener('DOMContentLoaded', function() {
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
-        let score = 000000;
+        let score = 0;
         let health = 100;
         let xCoords = [];
         let yCoords = [];
@@ -84,7 +84,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
         function spawnNewEnemy() {
             function drawLoop(x, y) {
-                ctx.fillRect((x - 7), (y - 7), 14, 14);
+                ctx.fillRect((x - 7), (y - 7), 11, 11);
                 ctx.fillStyle = '#1bffc1';
             }
             xCoords.forEach((currentValue, arrayIndex) => {
@@ -114,19 +114,16 @@ window.addEventListener('DOMContentLoaded', function() {
         function diffFn(){
             if(score === 500) {
                 perFrameDistance = .2;
-                console.log(perFrameDistance);
             } else if(score === 1000) {
                 perFrameDistance = .4;
-                console.log(perFrameDistance);
             } else if(score === 1500) {
                 perFrameDistance = .6;
-                console.log(perFrameDistance);
             } else if(score === 2500) {
                 perFrameDistance = .7;
-                console.log(perFrameDistance);
             } else if(score === 3000) {
                 perFrameDistance = .9;
-                console.log(perFrameDistance);
+            } else if(score >= 4000) {
+                perFrameDistance = perFrameDistance += .01;
             }
             
         }
@@ -234,10 +231,15 @@ window.addEventListener('DOMContentLoaded', function() {
                             arr[arr.indexOf(value)] = 30000;
                         }
                     });
-                    score = score += 100;
-                    scoreBoard.textContent = score;
+                    addScore();
                 }
             })
+        }
+
+        // Score Tally
+        function addScore(){
+            score = score += 100;
+            scoreBoard.textContent = score;
         }
 
         // Game loop function
@@ -270,11 +272,14 @@ window.addEventListener('DOMContentLoaded', function() {
                     health = health -= 5;
                     healthBar.style.width = `${health}%`;
                 }
-            });   
+            }); 
+            while(score >= 500) {
+                youLose();
+            } 
         }
-
         // Call game loop
-        const runGame = this.setInterval(gameLoop, 30);
+        setInterval(gameLoop, 30);
+        function youLose() {clearInterval(gameLoop)}
     }
 
 )
