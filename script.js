@@ -29,7 +29,7 @@
         let cursorPosY;
         let playerTurret;
         let difficulty = 1000;
-        let perFrameDistance = 2.3;
+        let perFrameDistance = .1;
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
@@ -113,11 +113,11 @@
             } else if(score === 1000) {
                 perFrameDistance = .3;
             } else if(score === 1500) {
-                perFrameDistance = .4;
-            } else if(score === 2500) {
                 perFrameDistance = .5;
-            } else if(score === 3000) {
+            } else if(score === 2500) {
                 perFrameDistance = .6;
+            } else if(score === 3000) {
+                perFrameDistance = .7;
             } else if(score >= 4000) {
                 perFrameDistance = perFrameDistance += .01;
             }
@@ -278,7 +278,7 @@
             turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
             turretTarget(ctx, cursorPosX, cursorPosY);
             spawnNewEnemy();
-            // diffFn(); 
+            diffFn(); 
             hitDetect();
             if(score >= 3000 && health > 0) {
                 gameWin();
