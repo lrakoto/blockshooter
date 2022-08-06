@@ -307,6 +307,9 @@
             score = 0;
             health = 100;
             lives = 3;
+            livesText.textContent = lives;
+            perFrameDistance = .1;
+            healthBar.style.width = `${health}%`;
         }
 
         function resetGameWin() {
@@ -360,8 +363,7 @@
             bottomBar.style.display = 'flex';
             topBar.style.display = 'flex';
             healthText.style.display = 'inline-block';
-            health = 100;
-            score = 0;
+            defaults();
             gameStartInt = setInterval(gameLoop, 30);
         }
         
