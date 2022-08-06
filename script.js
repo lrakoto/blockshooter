@@ -14,7 +14,7 @@
         const healthText = document.querySelector('#healthtext');
         const scoreBoard = document.querySelector('#score');
         const startButton = document.querySelector('#startbutton');
-        const lives = document.querySelector('#lives');
+        const livesText = document.querySelector('#lives');
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
@@ -22,13 +22,14 @@
         let gameStartInt;
         let score = 0;
         let health = 100;
+        let lives = 3;
         let xCoords = [];
         let yCoords = [];
         let cursorPosX;
         let cursorPosY;
         let playerTurret;
         let difficulty = 1000;
-        let perFrameDistance = .3;
+        let perFrameDistance = 2.3;
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
@@ -279,9 +280,14 @@
             spawnNewEnemy();
             // diffFn(); 
             hitDetect();
-            if(score >= 4000 && health > 0) {
+            if(score >= 3000 && health > 0) {
                 gameWin();
-            } else if (health <= 1) {
+            } else if(lives > 0 && health <= 1) {
+                lives = lives -= 1;
+                livesText.textContent = lives;
+                health = 100;
+                healthBar.style.width = `${health}%`;
+            } else if (health <= 1 && lives === 0) {
                 gameLose();
             }
         }
@@ -300,6 +306,7 @@
             scoreBoard.textContent = '0'
             score = 0;
             health = 100;
+            lives = 3;
         }
 
         function resetGameWin() {
