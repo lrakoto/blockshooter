@@ -41,7 +41,6 @@ body{
     background: linear-gradient(90deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 100%);
     box-sizing: border-box;
     padding:5%;
-    height: 65vh;
     border-radius: 4px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
     color:#fff;
@@ -50,10 +49,11 @@ body{
 
 h1{
     position:absolute;
-    left:calc(50vw - 140px);
+    left:calc(50% - 140px);
     text-align: center;
     color:#fff;
     width:280px;
+    box-sizing: border-box;
     background: rgba(255, 255, 255, .1);
     background: rgb(255,255,255);
     background: linear-gradient(0deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 1%, rgba(255,255,255,.7) 100%);
