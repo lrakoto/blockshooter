@@ -18,6 +18,7 @@
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
         const ctx = gameCanvas.getContext('2d');
+        const laserSound = document.querySelector('#laser');
         let gameStartInt;
         let score = 0;
         let health = 100;
@@ -205,6 +206,7 @@
         // Turret Fire Action
         gameCanvas.addEventListener("mousedown", fireAction);
         function fireAction (event) {
+            laserSound.play();
             function fireLoop(){
                 ctx.beginPath();
                 ctx.moveTo(canvasWidth/2, canvasHeight/2);

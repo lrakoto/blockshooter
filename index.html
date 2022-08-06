@@ -36,12 +36,12 @@
         <section id="startmenu">
             <div class="innerwrap bord">
                 <div class="cubeimg"></div>
-                <div>
+                <div style="overflow:auto">
                     <h4>Welcome Cadet!</h4>
                     <p>Evil green blocks have invaded this quadrant! Your job is to eliminate them and restore peace to this quadrant. The blocks have somehow developed the ability to teleport directly within local quadrants, but fortunately their targeting systems are unable to pinpoint exact coordinates. They will be many, they will be constant.</p>
                     <p>Our engineers have been hard at work developing a state of the art photon cannon. This means precision and an almost instantaneous payload delivery, but zero splash damage. You have to be dead on. Get in gear cadet, let's clear this quadrant of blocks!</p>
                     <h4>Instructions</h4>
-                    <p>Aim with the mouse, left click to fire! Score 3000 to win</p>
+                    <p>Aim with the mouse, left click to fire! Score 4000 to win</p>
                     <button id="startbutton">Deploy</button>
                 </div>
             </div>
@@ -59,6 +59,9 @@
             <div class="health-wrap" id="health"></div>
         </section>
     </main>
+    <audio id="laser" style="display:none">
+        <source src="./sounds/lasers.m4a" type="audio/mpeg">
+      </audio>
     <script src="./script.js"></script>
 </body>
 </html>

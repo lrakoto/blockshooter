@@ -11,7 +11,7 @@ body{
     width:100vw;
     height:100vh;
     z-index:7;
-    padding: 10% 15%;
+    padding: 15% 15%;
     box-sizing: border-box;
     position: absolute;
     margin: 0 auto;
@@ -22,7 +22,7 @@ body{
     width:100vw;
     height:100vh;
     z-index:7;
-    padding: 10% 15%;
+    padding: 15% 15%;
     box-sizing: border-box;
     position: absolute;
     margin: 0 auto;
@@ -32,7 +32,7 @@ body{
     background: url(./images/cube.jpeg);
     background-size: cover;
     background-position: center center;
-    width: 55vw;
+    width: 70vw;
     margin-right:50px;
 }
 
@@ -40,8 +40,8 @@ body{
     background: rgb(255,255,255);
     background: linear-gradient(90deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 100%);
     box-sizing: border-box;
-    padding:7%;
-    height: 70vh;
+    padding:5%;
+    height: 65vh;
     border-radius: 4px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
     color:#fff;
