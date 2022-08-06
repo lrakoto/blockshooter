@@ -22,7 +22,7 @@
         let gameStartInt;
         let score = 0;
         let health = 100;
-        let lives = 3;
+        let lives = 2;
         let xCoords = [];
         let yCoords = [];
         let cursorPosX;
@@ -115,9 +115,9 @@
             } else if(score === 1500) {
                 perFrameDistance = .5;
             } else if(score === 2500) {
-                perFrameDistance = .6;
-            } else if(score === 3000) {
                 perFrameDistance = .7;
+            } else if(score === 3000) {
+                perFrameDistance = .9;
             } else if(score >= 4000) {
                 perFrameDistance = perFrameDistance += .01;
             }
