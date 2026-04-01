@@ -34,8 +34,8 @@
         // Enemies as array of objects instead of parallel coord arrays
         let enemies = [];
 
-        // Hit flash effects
-        let hitFlashes = [];
+        // Explosion particles
+        let particles = [];
 
         // Cursor position
         let cursorPosX = centerX;
@@ -122,16 +122,38 @@
             ctx.stroke();
         }
 
-        // Hit flash visual feedback
-        function renderHitFlashes() {
-            hitFlashes = hitFlashes.filter(f => f.timer > 0);
-            hitFlashes.forEach(f => {
-                ctx.fillStyle = `rgba(255, 255, 100, ${f.timer / 10})`;
-                ctx.beginPath();
-                ctx.arc(f.x, f.y, 12, 0, 2 * Math.PI);
-                ctx.fill();
-                f.timer--;
+        // Spawn explosion particles at hit position
+        function spawnExplosion(x, y) {
+            const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5'];
+            for (let i = 0; i < 10; i++) {
+                const angle = (Math.PI * 2 / 10) * i + (Math.random() - 0.5) * 0.6;
+                const speed = 2 + Math.random() * 3;
+                particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: 3 + Math.random() * 3,
+                    alpha: 1,
+                    color: colors[Math.floor(Math.random() * colors.length)]
+                });
+            }
+        }
+
+        // Render and update explosion particles
+        function renderParticles() {
+            particles = particles.filter(p => p.alpha > 0);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.15; // slight gravity
+                p.size *= 0.90;
+                p.alpha -= 0.05;
+                ctx.globalAlpha = Math.max(0, p.alpha);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
             });
+            ctx.globalAlpha = 1;
         }
 
         // Turret Fire Action
@@ -159,7 +181,7 @@
                     event.offsetY >= e.y - 8 && event.offsetY <= e.y + 8;
                 if (hit) {
                     addScore();
-                    hitFlashes.push({ x: e.x, y: e.y, timer: 10 });
+                    spawnExplosion(e.x, e.y);
                 }
                 return !hit;
             });
@@ -207,7 +229,7 @@
             turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
             turretTarget(cursorPosX, cursorPosY);
             renderEnemies();
-            renderHitFlashes();
+            renderParticles();
             scaleDifficulty();
             hitDetect();
 
@@ -232,7 +254,7 @@
                 perFrameDistance: 0.1
             };
             enemies = [];
-            hitFlashes = [];
+            particles = [];
             scoreBoard.textContent = '0';
             livesText.textContent = '3';
             healthBar.style.width = '100%';
