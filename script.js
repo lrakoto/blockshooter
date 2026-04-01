@@ -37,6 +37,9 @@
         // Explosion particles
         let particles = [];
 
+        // Laser trail afterimages
+        let laserTrails = [];
+
         // Cursor position
         let cursorPosX = centerX;
         let cursorPosY = 0;
@@ -122,6 +125,54 @@
             ctx.stroke();
         }
 
+        // Draw a single glowing laser beam at a given opacity
+        function drawLaser(x1, y1, x2, y2, alpha) {
+            ctx.save();
+            ctx.lineCap = 'round';
+
+            // Outer wide glow
+            ctx.globalAlpha = alpha * 0.2;
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 30;
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = 14;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            // Mid glow
+            ctx.globalAlpha = alpha * 0.6;
+            ctx.shadowBlur = 15;
+            ctx.strokeStyle = '#ffee44';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            // Bright white core
+            ctx.globalAlpha = alpha;
+            ctx.shadowBlur = 6;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Render and fade all active laser trails
+        function renderLaserTrails() {
+            laserTrails = laserTrails.filter(l => l.alpha > 0);
+            laserTrails.forEach(l => {
+                drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
+                l.alpha -= 0.07;
+            });
+        }
+
         // Spawn explosion particles at hit position
         function spawnExplosion(x, y) {
             const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5'];
@@ -161,17 +212,14 @@
             laserSound.currentTime = 0;
             laserSound.play().catch(() => {});
 
-            function fireLoop() {
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.lineTo(cursorPosX, cursorPosY);
-                ctx.strokeStyle = 'yellow';
-                ctx.lineWidth = 1;
-                ctx.stroke();
+            // Add a laser trail — glow + afterimage handled by renderLaserTrails()
+            laserTrails.push({ x1: centerX, y1: centerY, x2: cursorPosX, y2: cursorPosY, alpha: 1 });
+
+            // Brief muzzle flash on the barrel
+            const fireInterval = setInterval(function() {
                 turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
                 turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
-            }
-            const fireInterval = setInterval(fireLoop, 10);
+            }, 10);
             setTimeout(() => clearInterval(fireInterval), 50);
 
             // Hit detection — single pass, enemies truly removed via filter
@@ -229,6 +277,7 @@
             turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
             turretTarget(cursorPosX, cursorPosY);
             renderEnemies();
+            renderLaserTrails();
             renderParticles();
             scaleDifficulty();
             hitDetect();
@@ -255,6 +304,7 @@
             };
             enemies = [];
             particles = [];
+            laserTrails = [];
             scoreBoard.textContent = '0';
             livesText.textContent = '3';
             healthBar.style.width = '100%';
