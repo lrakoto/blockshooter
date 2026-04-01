@@ -131,10 +131,10 @@
             ctx.lineCap = 'round';
 
             // Outer wide glow
-            ctx.globalAlpha = alpha * 0.2;
-            ctx.shadowColor = '#ffff00';
-            ctx.shadowBlur = 30;
-            ctx.strokeStyle = '#ffff00';
+            ctx.globalAlpha = alpha * 0.3;
+            ctx.shadowColor = '#0066ff';
+            ctx.shadowBlur = 40;
+            ctx.strokeStyle = '#0044ff';
             ctx.lineWidth = 14;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
@@ -142,9 +142,9 @@
             ctx.stroke();
 
             // Mid glow
-            ctx.globalAlpha = alpha * 0.6;
-            ctx.shadowBlur = 15;
-            ctx.strokeStyle = '#ffee44';
+            ctx.globalAlpha = alpha * 0.8;
+            ctx.shadowBlur = 20;
+            ctx.strokeStyle = '#4499ff';
             ctx.lineWidth = 4;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
@@ -153,9 +153,9 @@
 
             // Bright white core
             ctx.globalAlpha = alpha;
-            ctx.shadowBlur = 6;
+            ctx.shadowBlur = 8;
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
@@ -169,7 +169,7 @@
             laserTrails = laserTrails.filter(l => l.alpha > 0);
             laserTrails.forEach(l => {
                 drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
-                l.alpha -= 0.07;
+                l.alpha -= 0.04;
             });
         }
 
