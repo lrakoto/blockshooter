@@ -18,12 +18,18 @@
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
         let audioCtx = null;
+        let bgPlaying = false;
+        let bgLoopTimer = null;
 
-        function playLaserSound() {
+        function ensureAudioCtx() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             }
             if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playLaserSound() {
+            ensureAudioCtx();
 
             // Main descending sweep — classic sci-fi pew
             const osc = audioCtx.createOscillator();
@@ -50,6 +56,109 @@
             gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
             osc2.start(audioCtx.currentTime);
             osc2.stop(audioCtx.currentTime + 0.08);
+        }
+
+        function playExplosionSound() {
+            ensureAudioCtx();
+            const ac = audioCtx;
+
+            // Noise burst for crack/crunch
+            const bufSize = Math.floor(ac.sampleRate * 0.1);
+            const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+            const noise = ac.createBufferSource();
+            noise.buffer = buf;
+            const noiseGain = ac.createGain();
+            noise.connect(noiseGain);
+            noiseGain.connect(ac.destination);
+            noiseGain.gain.setValueAtTime(0.35, ac.currentTime);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.1);
+            noise.start(ac.currentTime);
+            noise.stop(ac.currentTime + 0.1);
+
+            // Low thump
+            const osc = ac.createOscillator();
+            const oscGain = ac.createGain();
+            osc.connect(oscGain);
+            oscGain.connect(ac.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(180, ac.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(40, ac.currentTime + 0.12);
+            oscGain.gain.setValueAtTime(0.3, ac.currentTime);
+            oscGain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.12);
+            osc.start(ac.currentTime);
+            osc.stop(ac.currentTime + 0.12);
+        }
+
+        // Schedule a single chiptune note
+        function scheduleNote(freq, startTime, duration, type, vol) {
+            const ac = audioCtx;
+            const osc = ac.createOscillator();
+            const gain = ac.createGain();
+            osc.connect(gain);
+            gain.connect(ac.destination);
+            osc.type = type;
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(vol, startTime);
+            gain.gain.setValueAtTime(vol, startTime + duration * 0.8);
+            gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            osc.start(startTime);
+            osc.stop(startTime + duration + 0.01);
+        }
+
+        function playBgLoop() {
+            const ac = audioCtx;
+            const t = ac.currentTime;
+            const e = 0.14; // eighth note at ~215bpm — fast and urgent
+
+            // Melody: square wave, C minor
+            const mel = [
+                [523,e],[622,e],[784,e*2],[0,e*0.5],
+                [698,e],[622,e],[523,e*2],[0,e],
+                [466,e],[523,e],[622,e*1.5],[0,e*0.5],
+                [523,e],[415,e*3],[0,e],
+                [392,e],[466,e],[523,e*2],[0,e*0.5],
+                [622,e],[523,e],[466,e*2],[0,e],
+                [415,e],[466,e],[523,e*1.5],[0,e*0.5],
+                [392,e*4],
+            ];
+            let mt = t;
+            mel.forEach(([f, d]) => {
+                if (f > 0) scheduleNote(f, mt, d, 'square', 0.04);
+                mt += d;
+            });
+
+            // Bass: triangle wave, one octave down
+            const bass = [
+                [130,e*4],[174,e*4],
+                [155,e*4],[130,e*4],
+                [196,e*4],[174,e*4],
+                [130,e*4],[196,e*4],
+            ];
+            let bt = t;
+            bass.forEach(([f, d]) => {
+                scheduleNote(f, bt, d, 'triangle', 0.045);
+                bt += d;
+            });
+
+            return mel.reduce((s, [, d]) => s + d, 0) * 1000;
+        }
+
+        function startBgMusic() {
+            ensureAudioCtx();
+            bgPlaying = true;
+            function loop() {
+                if (!bgPlaying) return;
+                const dur = playBgLoop();
+                bgLoopTimer = setTimeout(loop, dur - 80);
+            }
+            loop();
+        }
+
+        function stopBgMusic() {
+            bgPlaying = false;
+            clearTimeout(bgLoopTimer);
         }
         const ctx = gameCanvas.getContext('2d');
 
@@ -202,22 +311,23 @@
             laserTrails = laserTrails.filter(l => l.alpha > 0);
             laserTrails.forEach(l => {
                 drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
-                l.alpha -= 0.04;
+                l.alpha -= 0.08;
             });
         }
 
         // Spawn explosion particles at hit position
         function spawnExplosion(x, y) {
-            const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5'];
-            for (let i = 0; i < 10; i++) {
-                const angle = (Math.PI * 2 / 10) * i + (Math.random() - 0.5) * 0.6;
-                const speed = 2 + Math.random() * 3;
+            playExplosionSound();
+            const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5', '#ff4444'];
+            for (let i = 0; i < 22; i++) {
+                const angle = (Math.PI * 2 / 22) * i + (Math.random() - 0.5) * 0.8;
+                const speed = 1.5 + Math.random() * 5;
                 particles.push({
-                    x,
-                    y,
+                    x: x + (Math.random() - 0.5) * 6,
+                    y: y + (Math.random() - 0.5) * 6,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
-                    size: 3 + Math.random() * 3,
+                    size: 1 + Math.random() * 2.5,
                     alpha: 1,
                     color: colors[Math.floor(Math.random() * colors.length)]
                 });
@@ -351,6 +461,7 @@
             gameLoopInt = null;
             spawnInt = null;
             moveInt = null;
+            stopBgMusic();
         }
 
         // Start all game intervals
@@ -358,6 +469,7 @@
             gameLoopInt = setInterval(gameLoop, 30);
             spawnInt = setInterval(spawnEnemy, 1000);
             moveInt = setInterval(moveEnemies, 20);
+            startBgMusic();
         }
 
         // Show/hide game HUD
