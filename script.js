@@ -17,7 +17,40 @@
         const livesText = document.querySelector('#lives');
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
-        const laserSound = document.querySelector('#laser');
+        let audioCtx = null;
+
+        function playLaserSound() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            // Main descending sweep — classic sci-fi pew
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.15);
+
+            // High harmonic for crispness
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(2800, audioCtx.currentTime);
+            osc2.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.08);
+            gain2.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+            osc2.start(audioCtx.currentTime);
+            osc2.stop(audioCtx.currentTime + 0.08);
+        }
         const ctx = gameCanvas.getContext('2d');
 
         // Canvas Setup
@@ -209,8 +242,7 @@
 
         // Turret Fire Action
         function fireAction(event) {
-            laserSound.currentTime = 0;
-            laserSound.play().catch(() => {});
+            playLaserSound();
 
             // Add a laser trail — glow + afterimage handled by renderLaserTrails()
             laserTrails.push({ x1: centerX, y1: centerY, x2: cursorPosX, y2: cursorPosY, alpha: 1 });
