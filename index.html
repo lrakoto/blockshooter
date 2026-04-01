@@ -38,16 +38,31 @@
                 <div class="cubeimg"></div>
                 <div style="overflow:auto">
                     <h4>Welcome Cadet!</h4>
-                    <p>Evil green blocks have invaded this quadrant! Your job is to eliminate them and restore peace to this quadrant. The blocks have somehow developed the ability to teleport directly within local quadrants, but fortunately their targeting systems are unable to pinpoint exact coordinates. They will be many, they will be constant.</p>
-                    <p>Our engineers have been hard at work developing a state of the art photon cannon. This means precision and an almost instantaneous payload delivery, but zero splash damage. You have to be dead on. Get in gear cadet, let's clear this quadrant of blocks!</p>
-                    <h4>Instructions</h4>
-                    <p>Aim with the mouse, left click to fire! Score 3000 to win</p>
+                    <p>Evil blocks have invaded this quadrant. Eliminate them all across 5 escalating levels. Clear enough kills to advance — but spend your credits wisely in the upgrade shop between waves.</p>
+                    <p>Orange blocks take 2 hits. Red elite blocks take 3. Harder enemies are worth more credits.</p>
+                    <h4>Controls</h4>
+                    <p>Aim with mouse, left click to fire. Keys 1–5 switch weapons during battle.</p>
                     <button id="startbutton">Deploy</button>
+                </div>
+            </div>
+        </section>
+        <section id="levelmenu">
+            <div class="innerwrap bord col">
+                <div style="width:100%">
+                    <h4 id="levelheading">LEVEL 2</h4>
+                    <p id="leveldesc"></p>
+                    <p class="shop-credits-line">CREDITS AVAILABLE: <span id="shopcredits">0</span></p>
+                    <div id="weaponshop"></div>
+                    <p class="key-hint">Keys 1–5 to switch weapons mid-battle</p>
+                    <button id="continuebutton">CONTINUE →</button>
                 </div>
             </div>
         </section>
         <section id="topbar">
             <div class="score-wrap bord">SCORE: <span id="score">0</span></div>
+            <div class="hud-wrap bord">CR: <span id="credits">0</span></div>
+            <div class="hud-wrap bord">WPN: <span id="activeweapon">LASER</span></div>
+            <div class="hud-wrap bord">LV <span id="levelnum">1</span></div>
             <div class="lives-wrap bord"><span id="lives">3</span> LIVES</div>
         </section>
         <img src="./images/turret.webp" alt="turret" id="turret" style="display: none;">

@@ -150,3 +150,123 @@ button{
     letter-spacing: 12px;
     font-size:.7em;
 }
+
+/* Level-up / shop screen */
+#levelmenu {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    z-index: 7;
+    padding: 6% 10%;
+    box-sizing: border-box;
+    position: absolute;
+    overflow-y: auto;
+}
+
+.innerwrap.col {
+    flex-direction: column;
+}
+
+#levelheading {
+    color: #1bffc1;
+    letter-spacing: 8px;
+    font-size: 1.4em;
+    margin-bottom: 4px;
+}
+
+#leveldesc {
+    font-size: 0.75em;
+    opacity: 0.8;
+    margin-bottom: 12px;
+}
+
+.shop-credits-line {
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 3px;
+    margin-bottom: 14px;
+}
+
+#shopcredits {
+    color: #1bffc1;
+}
+
+#weaponshop {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: 10px;
+    width: 100%;
+    margin-bottom: 16px;
+}
+
+.weapon-card {
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 12px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+}
+
+.weapon-card.active-weapon {
+    border-color: #1bffc1;
+    background: rgba(27,255,193,0.07);
+}
+
+.weapon-name {
+    color: #1bffc1;
+    font-weight: 700;
+    font-size: 0.72em;
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+}
+
+.weapon-desc {
+    font-size: 0.6em;
+    color: rgba(255,255,255,0.6);
+    margin-bottom: 10px;
+    line-height: 1.5;
+    flex: 1;
+}
+
+.weapon-action button {
+    padding: 8px 10px;
+    font-size: 0.55em;
+    letter-spacing: 2px;
+    width: 100%;
+}
+
+.weapon-action button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.weapon-status {
+    color: #1bffc1;
+    font-size: 0.6em;
+    letter-spacing: 3px;
+    font-weight: 700;
+}
+
+.key-hint {
+    font-size: 0.6em;
+    opacity: 0.45;
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+}
+
+/* HUD additions */
+.hud-wrap {
+    position: relative;
+    padding: 27px 18px;
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.35) 50%, rgba(255,255,255,0) 100%);
+    color: #fff;
+    font-weight: 900;
+    font-size: 0.75em;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#credits, #activeweapon, #levelnum {
+    color: #1bffc1;
+}

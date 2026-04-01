@@ -1,529 +1,689 @@
 // Main event listener
-    window.addEventListener('DOMContentLoaded', function() {
-        // Grab DOM Elements
-        const gameCanvas = document.querySelector('#gamecanvas');
-        const startMenu = document.querySelector('#startmenu');
-        const winMenu = document.querySelector('#winmenu');
-        const loseMenu = document.querySelector('#losemenu');
-        const returnMenuWin = document.querySelector('#returntomenuwin');
-        const returnMenuLose = document.querySelector('#returntomenulose');
-        const resetWin = document.querySelector('#resetwin');
-        const resetLose = document.querySelector('#resetlose');
-        const topBar = document.querySelector('#topbar');
-        const bottomBar = document.querySelector('#bottombar');
-        const healthText = document.querySelector('#healthtext');
-        const scoreBoard = document.querySelector('#score');
-        const startButton = document.querySelector('#startbutton');
-        const livesText = document.querySelector('#lives');
-        const healthBar = document.querySelector('#health');
-        const turret = document.querySelector('#turret');
-        let audioCtx = null;
+window.addEventListener('DOMContentLoaded', function() {
 
-        function ensureAudioCtx() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+    // --- DOM Elements ---
+    const gameCanvas     = document.querySelector('#gamecanvas');
+    const startMenu      = document.querySelector('#startmenu');
+    const winMenu        = document.querySelector('#winmenu');
+    const loseMenu       = document.querySelector('#losemenu');
+    const levelMenu      = document.querySelector('#levelmenu');
+    const returnMenuWin  = document.querySelector('#returntomenuwin');
+    const returnMenuLose = document.querySelector('#returntomenulose');
+    const resetWin       = document.querySelector('#resetwin');
+    const resetLose      = document.querySelector('#resetlose');
+    const continueBtn    = document.querySelector('#continuebutton');
+    const topBar         = document.querySelector('#topbar');
+    const bottomBar      = document.querySelector('#bottombar');
+    const healthText     = document.querySelector('#healthtext');
+    const scoreBoard     = document.querySelector('#score');
+    const startButton    = document.querySelector('#startbutton');
+    const livesText      = document.querySelector('#lives');
+    const healthBar      = document.querySelector('#health');
+    const turret         = document.querySelector('#turret');
+    const creditsDisplay = document.querySelector('#credits');
+    const weaponDisplay  = document.querySelector('#activeweapon');
+    const levelDisplay   = document.querySelector('#levelnum');
+    const levelHeading   = document.querySelector('#levelheading');
+    const levelDesc      = document.querySelector('#leveldesc');
+    const shopCredits    = document.querySelector('#shopcredits');
+    const weaponShop     = document.querySelector('#weaponshop');
+    const ctx            = gameCanvas.getContext('2d');
+
+    // --- Audio ---
+    let audioCtx = null;
+
+    function ensureAudioCtx() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playLaserSound() {
+        ensureAudioCtx();
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1400, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.12);
+        gain.gain.setValueAtTime(0.25, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.start(t); osc.stop(t + 0.15);
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2); gain2.connect(audioCtx.destination);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(2800, t);
+        osc2.frequency.exponentialRampToValueAtTime(200, t + 0.08);
+        gain2.gain.setValueAtTime(0.1, t);
+        gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        osc2.start(t); osc2.stop(t + 0.08);
+    }
+
+    function playExplosionSound() {
+        ensureAudioCtx();
+        const ac = audioCtx;
+        const t = ac.currentTime;
+        // Low thump — body of the explosion
+        const thump = ac.createOscillator();
+        const thumpGain = ac.createGain();
+        thump.connect(thumpGain); thumpGain.connect(ac.destination);
+        thump.type = 'sine';
+        thump.frequency.setValueAtTime(160, t);
+        thump.frequency.exponentialRampToValueAtTime(35, t + 0.18);
+        thumpGain.gain.setValueAtTime(0.9, t);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        thump.start(t); thump.stop(t + 0.22);
+        // Initial crack — filtered so it's not too sharp/tinny
+        const crackLen = Math.floor(ac.sampleRate * 0.04);
+        const crackBuf = ac.createBuffer(1, crackLen, ac.sampleRate);
+        const cd = crackBuf.getChannelData(0);
+        for (let i = 0; i < crackLen; i++) cd[i] = Math.random() * 2 - 1;
+        const crack = ac.createBufferSource();
+        crack.buffer = crackBuf;
+        const crackLP = ac.createBiquadFilter();
+        crackLP.type = 'lowpass'; crackLP.frequency.value = 2200;
+        const crackGain = ac.createGain();
+        crack.connect(crackLP); crackLP.connect(crackGain); crackGain.connect(ac.destination);
+        crackGain.gain.setValueAtTime(1.0, t);
+        crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        crack.start(t);
+        // Debris tail — bandpass noise + slowing LFO, fades fully before stopping
+        const tailDur = 1.1;
+        const bitsLen = Math.floor(ac.sampleRate * tailDur);
+        const bitsBuf = ac.createBuffer(1, bitsLen, ac.sampleRate);
+        const bd = bitsBuf.getChannelData(0);
+        for (let i = 0; i < bitsLen; i++) bd[i] = Math.random() * 2 - 1;
+        const bits = ac.createBufferSource();
+        bits.buffer = bitsBuf;
+        const bp = ac.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(700, t);
+        bp.frequency.exponentialRampToValueAtTime(150, t + tailDur);
+        bp.Q.value = 0.6;
+        const bitsGain = ac.createGain();
+        bitsGain.gain.setValueAtTime(0.5, t + 0.03);
+        bitsGain.gain.exponentialRampToValueAtTime(0.001, t + tailDur - 0.12); // silent before stop
+        const lfoAmpGain = ac.createGain();
+        lfoAmpGain.gain.setValueAtTime(0.5, t + 0.03);
+        lfoAmpGain.gain.linearRampToValueAtTime(0.0, t + tailDur - 0.15); // LFO fades out cleanly
+        const lfo = ac.createOscillator();
+        lfo.type = 'square';
+        lfo.frequency.setValueAtTime(55, t + 0.03);
+        lfo.frequency.linearRampToValueAtTime(8, t + tailDur);
+        lfo.connect(lfoAmpGain); lfoAmpGain.connect(bitsGain.gain);
+        bits.connect(bp); bp.connect(bitsGain); bitsGain.connect(ac.destination);
+        bits.start(t + 0.03); lfo.start(t + 0.03);
+        bits.stop(t + tailDur); lfo.stop(t + tailDur);
+    }
+
+    // --- Canvas Setup ---
+    gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
+    gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
+    const canvasWidth  = parseInt(getComputedStyle(gameCanvas)['width']);
+    const canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
+    const centerX = canvasWidth / 2;
+    const centerY = canvasHeight / 2;
+
+    // --- Game Constants ---
+
+    // 5 levels — killsToNext: kills needed to advance, spawnInterval: ms between spawns
+    const LEVELS = [
+        { killsToNext: 8,  spawnInterval: 1000, toughChance: 0,    eliteChance: 0 },
+        { killsToNext: 12, spawnInterval: 850,  toughChance: 0.35,  eliteChance: 0 },
+        { killsToNext: 15, spawnInterval: 700,  toughChance: 0.5,   eliteChance: 0.15 },
+        { killsToNext: 18, spawnInterval: 580,  toughChance: 0.55,  eliteChance: 0.3 },
+        { killsToNext: 20, spawnInterval: 480,  toughChance: 0.5,   eliteChance: 0.45 },
+    ];
+
+    // Enemy speed per level
+    const LEVEL_SPEEDS = [0.15, 0.28, 0.45, 0.65, 0.9];
+
+    // Shown on the level-up screen (index = new level - 1)
+    const LEVEL_DESCS = [
+        '',
+        'Tougher blocks are joining the assault. Orange blocks take 2 hits.',
+        'Elite red blocks have appeared. They require 3 hits to destroy.',
+        'Forces are overwhelming. Upgrade your arsenal before re-deploying.',
+        'Final wave. Maximum threat level. Hold the line, Cadet.',
+    ];
+
+    // Weapons: cost 0 = default (always owned), cooldown in ms
+    const WEAPONS = {
+        laser:    { name: 'LASER',    desc: 'Single precision beam.',              cost: 0,   cooldown: 250  },
+        rapid:    { name: 'RAPID',    desc: 'Laser at 3x fire rate.',              cost: 400, cooldown: 80   },
+        spread:   { name: 'SPREAD',   desc: 'Three beams in a cone.',              cost: 300, cooldown: 350  },
+        piercing: { name: 'PIERCING', desc: 'Beam cuts through all enemies.',      cost: 500, cooldown: 300  },
+        bomb:     { name: 'BOMB',     desc: 'Blast radius — destroys all nearby.', cost: 600, cooldown: 1200 },
+    };
+
+    // --- Game State ---
+    let state = {};
+    let enemies     = [];
+    let particles   = [];
+    let laserTrails = [];
+    let bombEffects = [];
+
+    let gameLoopInt = null;
+    let spawnInt    = null;
+    let moveInt     = null;
+
+    let cursorPosX = centerX;
+    let cursorPosY = 0;
+
+    // --- Player ---
+    class Player {
+        constructor(x, y, width, height) {
+            this.x = x; this.y = y; this.width = width; this.height = height;
+            this.render = () => ctx.drawImage(turret, this.x, this.y, this.width, this.height);
         }
+    }
+    const playerTurret = new Player(centerX - 25, centerY - 25, 50, 50);
 
-        function playLaserSound() {
-            ensureAudioCtx();
+    // --- Input ---
+    gameCanvas.addEventListener('mousemove', e => {
+        cursorPosX = e.clientX - gameCanvas.offsetLeft;
+        cursorPosY = e.clientY - gameCanvas.offsetTop;
+    });
+    gameCanvas.addEventListener('mousedown', fireAction);
 
-            // Main descending sweep — classic sci-fi pew
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.12);
-            gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-            osc.start(audioCtx.currentTime);
-            osc.stop(audioCtx.currentTime + 0.15);
+    // Keys 1-5 switch active weapon (if owned)
+    window.addEventListener('keydown', e => {
+        const map = { '1': 'laser', '2': 'rapid', '3': 'spread', '4': 'piercing', '5': 'bomb' };
+        const w = map[e.key];
+        if (w && state.weapons && state.weapons.includes(w)) setWeapon(w);
+    });
 
-            // High harmonic for crispness
-            const osc2 = audioCtx.createOscillator();
-            const gain2 = audioCtx.createGain();
-            osc2.connect(gain2);
-            gain2.connect(audioCtx.destination);
-            osc2.type = 'sine';
-            osc2.frequency.setValueAtTime(2800, audioCtx.currentTime);
-            osc2.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.08);
-            gain2.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
-            osc2.start(audioCtx.currentTime);
-            osc2.stop(audioCtx.currentTime + 0.08);
-        }
+    function setWeapon(key) {
+        state.activeWeapon = key;
+        state.fireCooldown = WEAPONS[key].cooldown;
+        weaponDisplay.textContent = WEAPONS[key].name;
+    }
 
-        function playExplosionSound() {
-            ensureAudioCtx();
-            const ac = audioCtx;
-            const t = ac.currentTime;
+    // --- Level Helpers ---
+    function getLevelDef() {
+        return LEVELS[Math.min(state.level - 1, LEVELS.length - 1)];
+    }
 
-            // Initial boom — full-spectrum crack on impact
-            const crackLen = Math.floor(ac.sampleRate * 0.05);
-            const crackBuf = ac.createBuffer(1, crackLen, ac.sampleRate);
-            const cd = crackBuf.getChannelData(0);
-            for (let i = 0; i < crackLen; i++) cd[i] = Math.random() * 2 - 1;
-            const crack = ac.createBufferSource();
-            crack.buffer = crackBuf;
-            const crackGain = ac.createGain();
-            crack.connect(crackGain);
-            crackGain.connect(ac.destination);
-            crackGain.gain.setValueAtTime(1.2, t);
-            crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-            crack.start(t);
+    function getEnemyHp() {
+        const def = getLevelDef();
+        const r = Math.random();
+        if (r < def.eliteChance) return 3;
+        if (r < def.eliteChance + def.toughChance) return 2;
+        return 1;
+    }
 
-            // Bits crushing — high-passed noise chopped by a slowing square LFO,
-            // like digital fragments shattering and decaying
-            const bitsLen = Math.floor(ac.sampleRate * 0.7);
-            const bitsBuf = ac.createBuffer(1, bitsLen, ac.sampleRate);
-            const bd = bitsBuf.getChannelData(0);
-            for (let i = 0; i < bitsLen; i++) bd[i] = Math.random() * 2 - 1;
-            const bits = ac.createBufferSource();
-            bits.buffer = bitsBuf;
+    function getEnemyColor(hp) {
+        if (hp >= 3) return '#ff3333';
+        if (hp === 2) return '#ff8800';
+        return '#1bffc1';
+    }
 
-            const hipass = ac.createBiquadFilter();
-            hipass.type = 'highpass';
-            hipass.frequency.setValueAtTime(3000, t);
-            hipass.frequency.linearRampToValueAtTime(800, t + 0.7);
+    // --- Enemies ---
+    function spawnEnemy() {
+        let x, y;
+        do {
+            x = Math.floor(Math.random() * canvasWidth) - 15;
+            y = Math.floor(Math.random() * canvasHeight) - 15;
+        } while (Math.hypot(x - centerX, y - centerY) < 100);
+        const hp = getEnemyHp();
+        enemies.push({ x, y, hp, maxHp: hp, hitTimer: 0 });
+    }
 
-            const bitsGain = ac.createGain();
-            bitsGain.gain.setValueAtTime(0.6, t + 0.02);
-            bitsGain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-
-            // Square wave LFO chops the noise — starts fast (crunching) and slows as it fades
-            const lfo = ac.createOscillator();
-            lfo.type = 'square';
-            lfo.frequency.setValueAtTime(80, t + 0.02);
-            lfo.frequency.linearRampToValueAtTime(12, t + 0.7);
-            const lfoAmp = ac.createGain();
-            lfoAmp.gain.value = 0.6;
-            lfo.connect(lfoAmp);
-            lfoAmp.connect(bitsGain.gain);
-
-            bits.connect(hipass);
-            hipass.connect(bitsGain);
-            bitsGain.connect(ac.destination);
-            bits.start(t + 0.02);
-            lfo.start(t + 0.02);
-            bits.stop(t + 0.7);
-            lfo.stop(t + 0.7);
-        }
-
-        const ctx = gameCanvas.getContext('2d');
-
-        // Canvas Setup
-        gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
-        gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
-        const canvasWidth = parseInt(getComputedStyle(gameCanvas)['width']);
-        const canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
-        const centerX = canvasWidth / 2;
-        const centerY = canvasHeight / 2;
-
-        // Game state object
-        let state = {};
-
-        // Enemies as array of objects instead of parallel coord arrays
-        let enemies = [];
-
-        // Explosion particles
-        let particles = [];
-
-        // Laser trail afterimages
-        let laserTrails = [];
-
-        // Cursor position
-        let cursorPosX = centerX;
-        let cursorPosY = 0;
-
-        // Interval references — tracked so all can be cleared on reset
-        let gameLoopInt = null;
-        let spawnInt = null;
-        let moveInt = null;
-
-        // Create Classes
-        class Player {
-            constructor(x, y, width, height) {
-                this.x = x;
-                this.y = y;
-                this.width = width;
-                this.height = height;
-
-                this.render = function() {
-                    ctx.drawImage(turret, this.x, this.y, this.width, this.height);
-                }
-            }
-        }
-
-        // Create player class instance
-        const playerTurret = new Player(centerX - 25, centerY - 25, 50, 50);
-
-        // Canvas event listeners
-        gameCanvas.addEventListener('mousemove', function(e) {
-            cursorPosX = e.clientX - gameCanvas.offsetLeft;
-            cursorPosY = e.clientY - gameCanvas.offsetTop;
+    function moveEnemies() {
+        enemies.forEach(e => {
+            const angle = Math.atan2(centerY - e.y, centerX - e.x);
+            e.x += Math.cos(angle) * state.perFrameDistance;
+            e.y += Math.sin(angle) * state.perFrameDistance;
         });
-        gameCanvas.addEventListener('mousedown', fireAction);
+    }
 
-        // Spawn enemy with exclusion zone around player
-        function spawnEnemy() {
-            let x, y;
-            const exclusionRadius = 100;
-            do {
-                x = Math.floor(Math.random() * canvasWidth) - 15;
-                y = Math.floor(Math.random() * canvasHeight) - 15;
-            } while (Math.hypot(x - centerX, y - centerY) < exclusionRadius);
-            enemies.push({ x, y });
+    function renderEnemies() {
+        enemies.forEach(e => {
+            if (e.hitTimer > 0) e.hitTimer--;
+            // Flash white on hit, otherwise color by HP
+            ctx.fillStyle = e.hitTimer > 0 ? '#ffffff' : getEnemyColor(e.hp);
+            ctx.fillRect(e.x - 7, e.y - 7, 11, 11);
+            // HP bar above multi-HP enemies
+            if (e.maxHp > 1) {
+                const bw = 16, bh = 3, bx = e.x - 8, by = e.y - 14;
+                ctx.fillStyle = '#222';
+                ctx.fillRect(bx, by, bw, bh);
+                ctx.fillStyle = getEnemyColor(e.hp);
+                ctx.fillRect(bx, by, bw * (e.hp / e.maxHp), bh);
+            }
+        });
+    }
+
+    // --- Drawing Helpers ---
+    function turretBarrel(x1, y1, x2, y2, maxLen, color, lineWidth) {
+        const vx = x2 - x1, vy = y2 - y1;
+        const mag = Math.sqrt(vx * vx + vy * vy);
+        const scale = mag > maxLen ? maxLen / mag : 1;
+        ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + vx * scale, y1 + vy * scale); ctx.stroke();
+    }
+
+    function drawMuzzleFlash(x, y) {
+        ctx.save();
+        ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 25;
+        ctx.globalAlpha = 0.4; ctx.fillStyle = '#88ccff';
+        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.95; ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#aaddff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.75;
+        for (let i = 0; i < 6; i++) {
+            const a = (Math.PI / 3) * i;
+            ctx.beginPath(); ctx.moveTo(x, y);
+            ctx.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14); ctx.stroke();
         }
+        ctx.restore();
+    }
 
-        // Enemy movement — mutates enemy objects directly
-        function moveEnemies() {
-            enemies.forEach(e => {
-                const angle = Math.atan2(centerY - e.y, centerX - e.x);
-                e.x += Math.cos(angle) * state.perFrameDistance;
-                e.y += Math.sin(angle) * state.perFrameDistance;
-            });
-        }
+    function turretTarget(x, y) {
+        ctx.strokeStyle = 'red'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x, y, 20, 0, 2 * Math.PI); ctx.stroke();
+    }
 
-        // Render enemies
-        function renderEnemies() {
-            ctx.fillStyle = '#1bffc1';
-            enemies.forEach(e => {
-                ctx.fillRect(e.x - 7, e.y - 7, 11, 11);
-            });
-        }
+    function drawLaser(x1, y1, x2, y2, alpha) {
+        ctx.save(); ctx.lineCap = 'round';
+        ctx.globalAlpha = alpha * 0.3; ctx.shadowColor = '#0066ff'; ctx.shadowBlur = 40;
+        ctx.strokeStyle = '#0044ff'; ctx.lineWidth = 14;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.globalAlpha = alpha * 0.8; ctx.shadowBlur = 20;
+        ctx.strokeStyle = '#4499ff'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.globalAlpha = alpha; ctx.shadowBlur = 8;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.restore();
+    }
 
-        // Turret Barrel — merged barrel and flash into one function
-        function turretBarrel(x1, y1, x2, y2, maxLen, color, lineWidth) {
-            const vx = x2 - x1;
-            const vy = y2 - y1;
-            const mag = Math.sqrt(vx * vx + vy * vy);
-            const scale = mag > maxLen ? maxLen / mag : 1;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = lineWidth;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x1 + vx * scale, y1 + vy * scale);
-            ctx.stroke();
-        }
+    function renderLaserTrails() {
+        laserTrails = laserTrails.filter(l => l.alpha > 0);
+        laserTrails.forEach(l => {
+            drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
+            l.alpha -= 0.15;
+        });
+    }
 
-        // Muzzle flash starburst at the barrel tip
-        function drawMuzzleFlash(x, y) {
+    function renderBombEffects() {
+        bombEffects = bombEffects.filter(b => b.alpha > 0);
+        bombEffects.forEach(b => {
             ctx.save();
-            ctx.shadowColor = '#ffffff';
-            ctx.shadowBlur = 25;
-            // Outer glow
-            ctx.globalAlpha = 0.4;
-            ctx.fillStyle = '#88ccff';
-            ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.fill();
-            // Bright core
-            ctx.globalAlpha = 0.95;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(x, y, 5, 0, Math.PI * 2);
-            ctx.fill();
-            // Radial spikes
-            ctx.strokeStyle = '#aaddff';
-            ctx.lineWidth = 1.5;
-            ctx.globalAlpha = 0.75;
-            for (let i = 0; i < 6; i++) {
-                const a = (Math.PI / 3) * i;
-                ctx.beginPath();
-                ctx.moveTo(x, y);
-                ctx.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14);
-                ctx.stroke();
-            }
+            ctx.globalAlpha = b.alpha;
+            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 20;
+            ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
+            ctx.globalAlpha = b.alpha * 0.15;
+            ctx.fillStyle = '#ff6600'; ctx.fill();
             ctx.restore();
-        }
+            b.radius += 5; b.alpha -= 0.06;
+        });
+    }
 
-        // Turret Muzzle Target
-        function turretTarget(x, y) {
-            ctx.strokeStyle = 'red';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.arc(x, y, 20, 0, 2 * Math.PI);
-            ctx.stroke();
-        }
-
-        // Draw a single glowing laser beam at a given opacity
-        function drawLaser(x1, y1, x2, y2, alpha) {
-            ctx.save();
-            ctx.lineCap = 'round';
-
-            // Outer wide glow
-            ctx.globalAlpha = alpha * 0.3;
-            ctx.shadowColor = '#0066ff';
-            ctx.shadowBlur = 40;
-            ctx.strokeStyle = '#0044ff';
-            ctx.lineWidth = 14;
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-
-            // Mid glow
-            ctx.globalAlpha = alpha * 0.8;
-            ctx.shadowBlur = 20;
-            ctx.strokeStyle = '#4499ff';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-
-            // Bright white core
-            ctx.globalAlpha = alpha;
-            ctx.shadowBlur = 8;
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-
-        // Render and fade all active laser trails
-        function renderLaserTrails() {
-            laserTrails = laserTrails.filter(l => l.alpha > 0);
-            laserTrails.forEach(l => {
-                drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
-                l.alpha -= 0.15;
+    // --- Particles ---
+    function spawnExplosion(x, y) {
+        playExplosionSound();
+        const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5', '#ff4444'];
+        for (let i = 0; i < 22; i++) {
+            const angle = (Math.PI * 2 / 22) * i + (Math.random() - 0.5) * 0.8;
+            const speed = 1.5 + Math.random() * 5;
+            particles.push({
+                x: x + (Math.random() - 0.5) * 6,
+                y: y + (Math.random() - 0.5) * 6,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 1 + Math.random() * 2.5,
+                alpha: 1,
+                color: colors[Math.floor(Math.random() * colors.length)]
             });
-        }
-
-        // Spawn explosion particles at hit position
-        function spawnExplosion(x, y) {
-            playExplosionSound();
-            const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5', '#ff4444'];
-            for (let i = 0; i < 22; i++) {
-                const angle = (Math.PI * 2 / 22) * i + (Math.random() - 0.5) * 0.8;
-                const speed = 1.5 + Math.random() * 5;
-                particles.push({
-                    x: x + (Math.random() - 0.5) * 6,
-                    y: y + (Math.random() - 0.5) * 6,
-                    vx: Math.cos(angle) * speed,
-                    vy: Math.sin(angle) * speed,
-                    size: 1 + Math.random() * 2.5,
-                    alpha: 1,
-                    color: colors[Math.floor(Math.random() * colors.length)]
-                });
-            }
-        }
-
-        // Render and update explosion particles
-        function renderParticles() {
-            particles = particles.filter(p => p.alpha > 0);
-            particles.forEach(p => {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += 0.15; // slight gravity
-                p.size *= 0.90;
-                p.alpha -= 0.05;
-                ctx.globalAlpha = Math.max(0, p.alpha);
-                ctx.fillStyle = p.color;
-                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
-            });
-            ctx.globalAlpha = 1;
-        }
-
-        // Turret Fire Action
-        function fireAction(event) {
-            playLaserSound();
-
-            // Add a laser trail — glow + afterimage handled by renderLaserTrails()
-            laserTrails.push({ x1: centerX, y1: centerY, x2: cursorPosX, y2: cursorPosY, alpha: 1 });
-
-            // Brief muzzle flash at the barrel tip
-            const fireInterval = setInterval(function() {
-                turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
-                turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
-                const dx = cursorPosX - centerX;
-                const dy = cursorPosY - centerY;
-                const mag = Math.sqrt(dx * dx + dy * dy);
-                if (mag > 0) {
-                    const s = Math.min(25, mag) / mag;
-                    drawMuzzleFlash(centerX + dx * s, centerY + dy * s);
-                }
-            }, 10);
-            setTimeout(() => clearInterval(fireInterval), 50);
-
-            // Ray hit detection — check distance from each enemy center to the
-            // laser line segment (turret → click), not just the click point
-            const x1 = centerX, y1 = centerY;
-            const x2 = event.offsetX, y2 = event.offsetY;
-            const dx = x2 - x1, dy = y2 - y1;
-            const lenSq = dx * dx + dy * dy;
-            enemies = enemies.filter(e => {
-                // Project enemy onto the ray, clamp to segment, measure distance
-                const t = lenSq > 0
-                    ? Math.max(0, Math.min(1, ((e.x - x1) * dx + (e.y - y1) * dy) / lenSq))
-                    : 0;
-                const nearX = x1 + t * dx, nearY = y1 + t * dy;
-                const hit = Math.hypot(e.x - nearX, e.y - nearY) < 10;
-                if (hit) { addScore(); spawnExplosion(e.x, e.y); }
-                return !hit;
-            });
-        }
-
-        // Score Tally
-        function addScore() {
-            state.score += 100;
-            scoreBoard.textContent = state.score;
-        }
-
-        // Scale difficulty — thresholds shifted earlier so player experiences
-        // harder speeds before the 3000 win condition is reached
-        function scaleDifficulty() {
-            const s = state.score;
-            if      (s >= 4000) state.perFrameDistance += 0.01;
-            else if (s >= 2400) state.perFrameDistance = 0.9;
-            else if (s >= 1800) state.perFrameDistance = 0.7;
-            else if (s >= 1200) state.perFrameDistance = 0.5;
-            else if (s >= 700)  state.perFrameDistance = 0.3;
-            else if (s >= 300)  state.perFrameDistance = 0.2;
-        }
-
-        // Enemy hits player detection — true removal via filter
-        function hitDetect() {
-            enemies = enemies.filter(e => {
-                const hit =
-                    Math.abs(e.x - centerX) < 15 &&
-                    Math.abs(e.y - centerY) < 15;
-                if (hit) takeHealth();
-                return !hit;
-            });
-        }
-
-        // Remove Health
-        function takeHealth() {
-            state.health = Math.max(0, state.health - 5);
-            healthBar.style.width = `${state.health}%`;
-        }
-
-        // Game loop function
-        function gameLoop() {
-            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-            playerTurret.render();
-            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
-            turretTarget(cursorPosX, cursorPosY);
-            renderEnemies();
-            renderLaserTrails();
-            renderParticles();
-            scaleDifficulty();
-            hitDetect();
-
-            if (state.score >= 3000 && state.health > 0) {
-                gameWin();
-            } else if (state.health <= 0 && state.lives > 0) {
-                state.lives--;
-                livesText.textContent = state.lives;
-                state.health = 100;
-                healthBar.style.width = '100%';
-            } else if (state.health <= 0 && state.lives === 0) {
-                gameLose();
-            }
-        }
-
-        // Reset all game state
-        function defaults() {
-            state = {
-                score: 0,
-                health: 100,
-                lives: 3,
-                perFrameDistance: 0.1
-            };
-            enemies = [];
-            particles = [];
-            laserTrails = [];
-            scoreBoard.textContent = '0';
-            livesText.textContent = '3';
-            healthBar.style.width = '100%';
-            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        }
-
-        // Clear all running intervals
-        function clearAllIntervals() {
-            clearInterval(gameLoopInt);
-            clearInterval(spawnInt);
-            clearInterval(moveInt);
-            gameLoopInt = null;
-            spawnInt = null;
-            moveInt = null;
-        }
-
-        // Start all game intervals
-        function startIntervals() {
-            gameLoopInt = setInterval(gameLoop, 30);
-            spawnInt = setInterval(spawnEnemy, 1000);
-            moveInt = setInterval(moveEnemies, 20);
-        }
-
-        // Show/hide game HUD
-        function showGame() {
-            bottomBar.style.display = 'flex';
-            topBar.style.display = 'flex';
-            healthText.style.display = 'inline-block';
-        }
-        function hideGame() {
-            bottomBar.style.display = 'none';
-            topBar.style.display = 'none';
-            healthText.style.display = 'none';
-        }
-
-        // Game functions
-        startButton.addEventListener('click', function() {
-            startMenu.style.display = 'none';
-            showGame();
-            defaults();
-            startIntervals();
-        });
-
-        returnMenuWin.addEventListener('click', function() {
-            winMenu.style.display = 'none';
-            startMenu.style.display = 'block';
-            hideGame();
-            defaults();
-        });
-
-        returnMenuLose.addEventListener('click', function() {
-            loseMenu.style.display = 'none';
-            startMenu.style.display = 'block';
-            hideGame();
-            defaults();
-        });
-
-        resetWin.addEventListener('click', function() {
-            winMenu.style.display = 'none';
-            showGame();
-            defaults();
-            startIntervals();
-        });
-
-        resetLose.addEventListener('click', function() {
-            loseMenu.style.display = 'none';
-            showGame();
-            defaults();
-            startIntervals();
-        });
-
-        // End States
-        function gameWin() {
-            clearAllIntervals();
-            winMenu.style.display = 'block';
-            hideGame();
-        }
-        function gameLose() {
-            clearAllIntervals();
-            loseMenu.style.display = 'block';
-            hideGame();
         }
     }
 
-)
+    function renderParticles() {
+        particles = particles.filter(p => p.alpha > 0);
+        particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.15;
+            p.size *= 0.90; p.alpha -= 0.05;
+            ctx.globalAlpha = Math.max(0, p.alpha);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    // --- Hit Logic ---
+
+    // Returns false (remove enemy) if dead, true (keep) if still alive
+    function hitEnemy(e) {
+        e.hp--;
+        if (e.hp <= 0) {
+            state.levelKills++;
+            state.kills++;
+            addScore(e.maxHp * 100);
+            addCredits(e.maxHp * 75);
+            spawnExplosion(e.x, e.y);
+            return false;
+        }
+        e.hitTimer = 6; // flash white for 6 frames
+        return true;
+    }
+
+    // Point-to-line-segment distance check for ray hit detection
+    function rayHitsEnemy(e, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const lenSq = dx * dx + dy * dy;
+        const t = lenSq > 0
+            ? Math.max(0, Math.min(1, ((e.x - x1) * dx + (e.y - y1) * dy) / lenSq))
+            : 0;
+        return Math.hypot(e.x - (x1 + t * dx), e.y - (y1 + t * dy)) < 10;
+    }
+
+    // --- Fire ---
+    function fireAction(event) {
+        if (!state.weapons) return;
+        const now = Date.now();
+        if (now - state.lastFired < state.fireCooldown) return;
+        state.lastFired = now;
+
+        playLaserSound();
+
+        const tx = event.offsetX, ty = event.offsetY;
+
+        // Muzzle flash at barrel tip
+        const fireInterval = setInterval(function() {
+            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
+            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
+            const dx = cursorPosX - centerX, dy = cursorPosY - centerY;
+            const mag = Math.sqrt(dx * dx + dy * dy);
+            if (mag > 0) {
+                const s = Math.min(25, mag) / mag;
+                drawMuzzleFlash(centerX + dx * s, centerY + dy * s);
+            }
+        }, 10);
+        setTimeout(() => clearInterval(fireInterval), 50);
+
+        const w = state.activeWeapon;
+
+        if (w === 'bomb') {
+            // AOE — hits all enemies within radius
+            const bombR = 90;
+            bombEffects.push({ x: tx, y: ty, radius: 5, alpha: 1 });
+            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1 });
+            enemies = enemies.filter(e => {
+                if (Math.hypot(e.x - tx, e.y - ty) < bombR) return hitEnemy(e);
+                return true;
+            });
+
+        } else if (w === 'spread') {
+            // Three rays in a cone, each hits first enemy in its path
+            const baseAngle = Math.atan2(ty - centerY, tx - centerX);
+            const dist = Math.hypot(tx - centerX, ty - centerY) || canvasWidth;
+            [-0.22, 0, 0.22].forEach(offset => {
+                const a = baseAngle + offset;
+                const ex = centerX + Math.cos(a) * dist;
+                const ey = centerY + Math.sin(a) * dist;
+                laserTrails.push({ x1: centerX, y1: centerY, x2: ex, y2: ey, alpha: 1 });
+                let firstHit = false;
+                enemies = enemies.filter(e => {
+                    if (!firstHit && rayHitsEnemy(e, centerX, centerY, ex, ey)) {
+                        firstHit = true;
+                        return hitEnemy(e);
+                    }
+                    return true;
+                });
+            });
+
+        } else if (w === 'piercing') {
+            // Single ray — hits ALL enemies along its path
+            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1 });
+            enemies = enemies.filter(e => {
+                if (rayHitsEnemy(e, centerX, centerY, tx, ty)) return hitEnemy(e);
+                return true;
+            });
+
+        } else {
+            // laser / rapid — single ray, hits first enemy only
+            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1 });
+            let firstHit = false;
+            enemies = enemies.filter(e => {
+                if (!firstHit && rayHitsEnemy(e, centerX, centerY, tx, ty)) {
+                    firstHit = true;
+                    return hitEnemy(e);
+                }
+                return true;
+            });
+        }
+    }
+
+    // --- Score / Credits ---
+    function addScore(points) {
+        state.score += points;
+        scoreBoard.textContent = state.score;
+    }
+
+    function addCredits(amount) {
+        state.credits += amount;
+        creditsDisplay.textContent = state.credits;
+    }
+
+    // --- Player Damage ---
+    function hitDetect() {
+        enemies = enemies.filter(e => {
+            const hit = Math.abs(e.x - centerX) < 15 && Math.abs(e.y - centerY) < 15;
+            if (hit) takeHealth();
+            return !hit;
+        });
+    }
+
+    function takeHealth() {
+        state.health = Math.max(0, state.health - 5);
+        healthBar.style.width = `${state.health}%`;
+    }
+
+    // --- Level Up ---
+    function checkLevelUp() {
+        const def = getLevelDef();
+        if (state.levelKills < def.killsToNext) return;
+        clearAllIntervals();
+        enemies = [];
+        if (state.level >= LEVELS.length) {
+            gameWin();
+        } else {
+            state.level++;
+            state.levelKills = 0;
+            levelDisplay.textContent = state.level;
+            showLevelUpScreen();
+        }
+    }
+
+    function showLevelUpScreen() {
+        levelHeading.textContent = `LEVEL ${state.level}`;
+        levelDesc.textContent = LEVEL_DESCS[state.level - 1] || '';
+        shopCredits.textContent = state.credits;
+        populateShop();
+        levelMenu.style.display = 'block';
+        hideGame();
+    }
+
+    function hideLevelUpScreen() {
+        levelMenu.style.display = 'none';
+    }
+
+    function populateShop() {
+        weaponShop.innerHTML = '';
+        Object.entries(WEAPONS).forEach(([key, w]) => {
+            const owned    = state.weapons.includes(key);
+            const isActive = state.activeWeapon === key;
+
+            const card = document.createElement('div');
+            card.className = 'weapon-card' + (isActive ? ' active-weapon' : '');
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'weapon-name';
+            nameEl.textContent = w.name;
+
+            const descEl = document.createElement('div');
+            descEl.className = 'weapon-desc';
+            descEl.textContent = w.desc;
+
+            const actionEl = document.createElement('div');
+            actionEl.className = 'weapon-action';
+
+            if (isActive) {
+                actionEl.innerHTML = '<span class="weapon-status">EQUIPPED</span>';
+            } else if (owned) {
+                const btn = document.createElement('button');
+                btn.textContent = 'EQUIP';
+                btn.onclick = () => {
+                    setWeapon(key);
+                    populateShop();
+                    shopCredits.textContent = state.credits;
+                };
+                actionEl.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                btn.textContent = `${w.cost} CR`;
+                btn.disabled = state.credits < w.cost;
+                btn.onclick = () => {
+                    if (state.credits < w.cost) return;
+                    state.credits -= w.cost;
+                    state.weapons.push(key);
+                    setWeapon(key);
+                    creditsDisplay.textContent = state.credits;
+                    shopCredits.textContent = state.credits;
+                    populateShop();
+                };
+                actionEl.appendChild(btn);
+            }
+
+            card.appendChild(nameEl);
+            card.appendChild(descEl);
+            card.appendChild(actionEl);
+            weaponShop.appendChild(card);
+        });
+    }
+
+    // --- Game Loop ---
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        playerTurret.render();
+        turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
+        turretTarget(cursorPosX, cursorPosY);
+        renderEnemies();
+        renderLaserTrails();
+        renderBombEffects();
+        renderParticles();
+        hitDetect();
+        checkLevelUp();
+
+        if (state.health <= 0 && state.lives > 0) {
+            state.lives--;
+            livesText.textContent = state.lives;
+            state.health = 100;
+            healthBar.style.width = '100%';
+        } else if (state.health <= 0 && state.lives === 0) {
+            gameLose();
+        }
+    }
+
+    // --- HUD ---
+    function showGame() {
+        bottomBar.style.display = 'flex';
+        topBar.style.display = 'flex';
+        healthText.style.display = 'inline-block';
+    }
+    function hideGame() {
+        bottomBar.style.display = 'none';
+        topBar.style.display = 'none';
+        healthText.style.display = 'none';
+    }
+
+    // --- Reset ---
+    function defaults() {
+        state = {
+            score: 0,
+            health: 100,
+            lives: 3,
+            perFrameDistance: LEVEL_SPEEDS[0],
+            level: 1,
+            levelKills: 0,
+            kills: 0,
+            credits: 0,
+            weapons: ['laser'],
+            activeWeapon: 'laser',
+            fireCooldown: WEAPONS.laser.cooldown,
+            lastFired: 0,
+        };
+        enemies = []; particles = []; laserTrails = []; bombEffects = [];
+        scoreBoard.textContent = '0';
+        livesText.textContent = '3';
+        creditsDisplay.textContent = '0';
+        weaponDisplay.textContent = 'LASER';
+        levelDisplay.textContent = '1';
+        healthBar.style.width = '100%';
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    }
+
+    function clearAllIntervals() {
+        clearInterval(gameLoopInt);
+        clearInterval(spawnInt);
+        clearInterval(moveInt);
+        gameLoopInt = null; spawnInt = null; moveInt = null;
+    }
+
+    function startIntervals() {
+        const def = getLevelDef();
+        state.perFrameDistance = LEVEL_SPEEDS[Math.min(state.level - 1, LEVEL_SPEEDS.length - 1)];
+        gameLoopInt = setInterval(gameLoop, 30);
+        spawnInt    = setInterval(spawnEnemy, def.spawnInterval);
+        moveInt     = setInterval(moveEnemies, 20);
+    }
+
+    // --- Button Listeners ---
+    startButton.addEventListener('click', function() {
+        startMenu.style.display = 'none';
+        showGame(); defaults(); startIntervals();
+    });
+
+    continueBtn.addEventListener('click', function() {
+        hideLevelUpScreen();
+        showGame(); startIntervals();
+    });
+
+    returnMenuWin.addEventListener('click', function() {
+        winMenu.style.display = 'none';
+        startMenu.style.display = 'block';
+        hideGame(); defaults();
+    });
+
+    returnMenuLose.addEventListener('click', function() {
+        loseMenu.style.display = 'none';
+        startMenu.style.display = 'block';
+        hideGame(); defaults();
+    });
+
+    resetWin.addEventListener('click', function() {
+        winMenu.style.display = 'none';
+        showGame(); defaults(); startIntervals();
+    });
+
+    resetLose.addEventListener('click', function() {
+        loseMenu.style.display = 'none';
+        showGame(); defaults(); startIntervals();
+    });
+
+    // --- End States ---
+    function gameWin() {
+        clearAllIntervals();
+        winMenu.style.display = 'block';
+        hideGame();
+    }
+    function gameLose() {
+        clearAllIntervals();
+        loseMenu.style.display = 'block';
+        hideGame();
+    }
+
+});
