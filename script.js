@@ -61,55 +61,55 @@
             const ac = audioCtx;
             const t = ac.currentTime;
 
-            // Sharp crack — short full-spectrum burst on the attack
-            const crackBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.06), ac.sampleRate);
-            const crackData = crackBuf.getChannelData(0);
-            for (let i = 0; i < crackData.length; i++) crackData[i] = Math.random() * 2 - 1;
+            // Initial boom — full-spectrum crack on impact
+            const crackLen = Math.floor(ac.sampleRate * 0.05);
+            const crackBuf = ac.createBuffer(1, crackLen, ac.sampleRate);
+            const cd = crackBuf.getChannelData(0);
+            for (let i = 0; i < crackLen; i++) cd[i] = Math.random() * 2 - 1;
             const crack = ac.createBufferSource();
             crack.buffer = crackBuf;
             const crackGain = ac.createGain();
             crack.connect(crackGain);
             crackGain.connect(ac.destination);
-            crackGain.gain.setValueAtTime(1.0, t);
-            crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+            crackGain.gain.setValueAtTime(1.2, t);
+            crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
             crack.start(t);
 
-            // Low rumble — heavily low-passed noise that lingers
-            const rumbleBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.8), ac.sampleRate);
-            const rumbleData = rumbleBuf.getChannelData(0);
-            for (let i = 0; i < rumbleData.length; i++) rumbleData[i] = Math.random() * 2 - 1;
-            const rumble = ac.createBufferSource();
-            rumble.buffer = rumbleBuf;
-            const lowpass = ac.createBiquadFilter();
-            lowpass.type = 'lowpass';
-            lowpass.frequency.setValueAtTime(300, t);
-            lowpass.frequency.exponentialRampToValueAtTime(60, t + 0.7);
-            const rumbleGain = ac.createGain();
-            rumble.connect(lowpass);
-            lowpass.connect(rumbleGain);
-            rumbleGain.connect(ac.destination);
-            rumbleGain.gain.setValueAtTime(0.7, t);
-            rumbleGain.gain.setValueAtTime(0.5, t + 0.05);
-            rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
-            rumble.start(t);
+            // Bits crushing — high-passed noise chopped by a slowing square LFO,
+            // like digital fragments shattering and decaying
+            const bitsLen = Math.floor(ac.sampleRate * 0.7);
+            const bitsBuf = ac.createBuffer(1, bitsLen, ac.sampleRate);
+            const bd = bitsBuf.getChannelData(0);
+            for (let i = 0; i < bitsLen; i++) bd[i] = Math.random() * 2 - 1;
+            const bits = ac.createBufferSource();
+            bits.buffer = bitsBuf;
 
-            // Mid debris — bandpass noise for the shrapnel texture
-            const debrisBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.35), ac.sampleRate);
-            const debrisData = debrisBuf.getChannelData(0);
-            for (let i = 0; i < debrisData.length; i++) debrisData[i] = Math.random() * 2 - 1;
-            const debris = ac.createBufferSource();
-            debris.buffer = debrisBuf;
-            const bandpass = ac.createBiquadFilter();
-            bandpass.type = 'bandpass';
-            bandpass.frequency.value = 800;
-            bandpass.Q.value = 0.8;
-            const debrisGain = ac.createGain();
-            debris.connect(bandpass);
-            bandpass.connect(debrisGain);
-            debrisGain.connect(ac.destination);
-            debrisGain.gain.setValueAtTime(0.4, t);
-            debrisGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-            debris.start(t);
+            const hipass = ac.createBiquadFilter();
+            hipass.type = 'highpass';
+            hipass.frequency.setValueAtTime(3000, t);
+            hipass.frequency.linearRampToValueAtTime(800, t + 0.7);
+
+            const bitsGain = ac.createGain();
+            bitsGain.gain.setValueAtTime(0.6, t + 0.02);
+            bitsGain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+
+            // Square wave LFO chops the noise — starts fast (crunching) and slows as it fades
+            const lfo = ac.createOscillator();
+            lfo.type = 'square';
+            lfo.frequency.setValueAtTime(80, t + 0.02);
+            lfo.frequency.linearRampToValueAtTime(12, t + 0.7);
+            const lfoAmp = ac.createGain();
+            lfoAmp.gain.value = 0.6;
+            lfo.connect(lfoAmp);
+            lfoAmp.connect(bitsGain.gain);
+
+            bits.connect(hipass);
+            hipass.connect(bitsGain);
+            bitsGain.connect(ac.destination);
+            bits.start(t + 0.02);
+            lfo.start(t + 0.02);
+            bits.stop(t + 0.7);
+            lfo.stop(t + 0.7);
         }
 
         const ctx = gameCanvas.getContext('2d');
