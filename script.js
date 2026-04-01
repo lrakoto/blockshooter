@@ -17,365 +17,303 @@
         const livesText = document.querySelector('#lives');
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
-        const ctx = gameCanvas.getContext('2d');
         const laserSound = document.querySelector('#laser');
-        let gameStartInt;
-        let score = 0;
-        let health = 100;
-        let lives = 2;
-        let xCoords = [];
-        let yCoords = [];
-        let cursorPosX;
-        let cursorPosY;
-        let playerTurret;
-        let difficulty = 1000;
-        let perFrameDistance = .1;
+        const ctx = gameCanvas.getContext('2d');
 
         // Canvas Setup
         gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
         gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
-        let canvasWidth = parseInt(getComputedStyle(gameCanvas)['width']);
-        let canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
+        const canvasWidth = parseInt(getComputedStyle(gameCanvas)['width']);
+        const canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
+        const centerX = canvasWidth / 2;
+        const centerY = canvasHeight / 2;
 
-        // Add cancas event listeners
-        gameCanvas.addEventListener('mousemove', function (e) {
-            findxy('move', e)
-        }, false);
-        gameCanvas.addEventListener('mousedown', function (e) {
-            findxy('down', e)
-        }, false);
-        gameCanvas.addEventListener('mouseup', function (e) {
-            findxy('up', e)
-        }, false);
-        gameCanvas.addEventListener('mouseout', function (e) {
-            findxy('out', e)
-        }, false);
+        // Game state object
+        let state = {};
+
+        // Enemies as array of objects instead of parallel coord arrays
+        let enemies = [];
+
+        // Hit flash effects
+        let hitFlashes = [];
+
+        // Cursor position
+        let cursorPosX = centerX;
+        let cursorPosY = 0;
+
+        // Interval references — tracked so all can be cleared on reset
+        let gameLoopInt = null;
+        let spawnInt = null;
+        let moveInt = null;
 
         // Create Classes
         class Player {
-            constructor(x, y, color, width, height, health) {
+            constructor(x, y, width, height) {
                 this.x = x;
                 this.y = y;
-                this.image = turret;
-                this.color = color;
                 this.width = width;
                 this.height = height;
-                this.health = health;
 
                 this.render = function() {
-                    ctx.drawImage(this.image, this.x, this.y, this.width, this.height);
+                    ctx.drawImage(turret, this.x, this.y, this.width, this.height);
                 }
             }
         }
 
         // Create player class instance
-        playerTurret = new Player((canvasWidth/2) - 25, (canvasHeight/2) - 25, 'black', 50, 50, 100);
+        const playerTurret = new Player(centerX - 25, centerY - 25, 50, 50);
 
-        // New enemy function
-        function addCoords () {
-            xCoords.push(Math.floor(Math.random() * gameCanvas.width) - 15);
-            yCoords.push(Math.floor(Math.random() * gameCanvas.height) - 15);
+        // Canvas event listeners
+        gameCanvas.addEventListener('mousemove', function(e) {
+            cursorPosX = e.clientX - gameCanvas.offsetLeft;
+            cursorPosY = e.clientY - gameCanvas.offsetTop;
+        });
+        gameCanvas.addEventListener('mousedown', fireAction);
+
+        // Spawn enemy with exclusion zone around player
+        function spawnEnemy() {
+            let x, y;
+            const exclusionRadius = 100;
+            do {
+                x = Math.floor(Math.random() * canvasWidth) - 15;
+                y = Math.floor(Math.random() * canvasHeight) - 15;
+            } while (Math.hypot(x - centerX, y - centerY) < exclusionRadius);
+            enemies.push({ x, y });
         }
-        this.setInterval(addCoords, difficulty);       
 
-        function spawnNewEnemy() {
-            function drawLoop(x, y) {
-                ctx.fillRect((x - 7), (y - 7), 11, 11);
-                ctx.fillStyle = '#1bffc1';
-            }
-            xCoords.forEach((currentValue, arrayIndex) => {
-                drawLoop(currentValue, yCoords[arrayIndex]);
+        // Enemy movement — mutates enemy objects directly
+        function moveEnemies() {
+            enemies.forEach(e => {
+                const angle = Math.atan2(centerY - e.y, centerX - e.x);
+                e.x += Math.cos(angle) * state.perFrameDistance;
+                e.y += Math.sin(angle) * state.perFrameDistance;
             });
         }
 
-        // Enemy movement 
-        function moveEnemy () {
-            for(i = 0; i < xCoords.length; i++) {
-                let storedValueX = xCoords[i];
-                let storedValueY = yCoords[i];
-                let point = {X: storedValueX, Y: storedValueY};
-                let target = {X:canvasWidth/2, Y:canvasHeight/2};
-                let angle = Math.atan2(target.Y - point.Y, target.X - point.X);
-                let sin = Math.sin(angle) * perFrameDistance;
-                let cos = Math.cos(angle) * perFrameDistance;
-                xCoords.splice(i, 1);
-                xCoords.splice(i, 0, storedValueX += cos);
-                yCoords.splice(i, 1);
-                yCoords.splice(i, 0, storedValueY += sin);
-            }
-        }
-        this.setInterval(moveEnemy, 20);
-
-        // Scale difficulty
-        function diffFn(){
-            if(score === 500) {
-                perFrameDistance = .2;
-            } else if(score === 1000) {
-                perFrameDistance = .3;
-            } else if(score === 1500) {
-                perFrameDistance = .5;
-            } else if(score === 2500) {
-                perFrameDistance = .7;
-            } else if(score === 3000) {
-                perFrameDistance = .9;
-            } else if(score >= 4000) {
-                perFrameDistance = perFrameDistance += .01;
-            }
-            
+        // Render enemies
+        function renderEnemies() {
+            ctx.fillStyle = '#1bffc1';
+            enemies.forEach(e => {
+                ctx.fillRect(e.x - 7, e.y - 7, 11, 11);
+            });
         }
 
-        // Turret Barrel with Max length
-        function turretBarrel (x1, y1, x2, y2, maxLen) {
-            var vx = x2 - x1; // get dist between start and end of line
-            var vy = y2 - y1; // for x and y
-        
-            // use pythagoras to get line total length
-            var mag = Math.sqrt(vx * vx + vy * vy); 
-            if (mag > maxLen) { // is the line longer than needed?
-        
-                // calculate how much to scale the line to get the correct distance
-                mag = maxLen / mag;
-                vx *= mag;
-                vy *= mag; 
-            }
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 5;
+        // Turret Barrel — merged barrel and flash into one function
+        function turretBarrel(x1, y1, x2, y2, maxLen, color, lineWidth) {
+            const vx = x2 - x1;
+            const vy = y2 - y1;
+            const mag = Math.sqrt(vx * vx + vy * vy);
+            const scale = mag > maxLen ? maxLen / mag : 1;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
             ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(x1, y1);
-            ctx.lineTo(x1 + vx, y1 + vy);
+            ctx.lineTo(x1 + vx * scale, y1 + vy * scale);
             ctx.stroke();
         }
 
-        // Turret Muzzle Flash
-        function turretBarrelFlash (x1, y1, x2, y2, maxLen) {
-            var vx = x2 - x1; // get dist between start and end of line
-            var vy = y2 - y1; // for x and y
-        
-            // use pythagoras to get line total length
-            var mag = Math.sqrt(vx * vx + vy * vy); 
-            if (mag > maxLen) { // is the line longer than needed?
-        
-                // calculate how much to scale the line to get the correct distance
-                mag = maxLen / mag;
-                vx *= mag;
-                vy *= mag; 
-            }
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 5;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x1 + vx, y1 + vy);
-            ctx.stroke();
-        }
-
-        // Turret Barrel target function
-        function turretTarget(ctx, pointX, pointY) {
+        // Turret Muzzle Target
+        function turretTarget(x, y) {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.arc(pointX, pointY, 20, 0, 2 * Math.PI);
-            ctx.stroke();        
+            ctx.arc(x, y, 20, 0, 2 * Math.PI);
+            ctx.stroke();
         }
-        
-        // Stationary turret and target function
-        function findxy(action, event) {
-            if (action == 'move') {
-                cursorPosX = event.clientX - gameCanvas.offsetLeft;
-                cursorPosY = event.clientY - gameCanvas.offsetTop;
-            }
+
+        // Hit flash visual feedback
+        function renderHitFlashes() {
+            hitFlashes = hitFlashes.filter(f => f.timer > 0);
+            hitFlashes.forEach(f => {
+                ctx.fillStyle = `rgba(255, 255, 100, ${f.timer / 10})`;
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, 12, 0, 2 * Math.PI);
+                ctx.fill();
+                f.timer--;
+            });
         }
 
         // Turret Fire Action
-        gameCanvas.addEventListener("mousedown", fireAction);
-        function fireAction (event) {
-            // laserSound.play();
-            function fireLoop(){
+        function fireAction(event) {
+            laserSound.currentTime = 0;
+            laserSound.play().catch(() => {});
+
+            function fireLoop() {
                 ctx.beginPath();
-                ctx.moveTo(canvasWidth/2, canvasHeight/2);
+                ctx.moveTo(centerX, centerY);
                 ctx.lineTo(cursorPosX, cursorPosY);
                 ctx.strokeStyle = 'yellow';
                 ctx.lineWidth = 1;
                 ctx.stroke();
-                turretBarrelFlash(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 30);
-                turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
-            }
-            function stopLoop(){
-                clearInterval(fireInterval);
+                turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
+                turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
             }
             const fireInterval = setInterval(fireLoop, 10);
-            setTimeout(stopLoop, 50);
-            
-            // Leaving this here for future reference
-            // gameCanvas.addEventListener("mouseup", stopLoop);
-            
-            // Shoot hit detection
-            xCoords.forEach((value, index) => {
-                let rules = 
-                event.offsetX >= (value - 8) && 
-                event.offsetX <= (value + 8) &&
-                event.offsetY >= (yCoords[index] - 8) &&
-                event.offsetY <= (yCoords[index] + 8)
-                ;
-                if(rules) {
-                    xCoords.forEach((value, index, arr) => {
-                        if(event.offsetX >= (value - 4) && event.offsetX <= (value + 4) && event.offsetY >= (yCoords[index] - 4) && event.offsetY <= (yCoords[index] + 4)) {
-                            arr[arr.indexOf(value)] = 30000;
-                        }
-                    });
-                    yCoords.forEach((value, index, arr) => {
-                        if(event.offsetY >= (yCoords[index] - 4) && event.offsetY <= (yCoords[index] + 4) && event.offsetX >= (value - 4) && event.offsetX <= (value + 4) && event.offsetY >= (yCoords[index] - 4)) {
-                            arr[arr.indexOf(value)] = 30000;
-                        }
-                    });
+            setTimeout(() => clearInterval(fireInterval), 50);
+
+            // Hit detection — single pass, enemies truly removed via filter
+            enemies = enemies.filter(e => {
+                const hit =
+                    event.offsetX >= e.x - 8 && event.offsetX <= e.x + 8 &&
+                    event.offsetY >= e.y - 8 && event.offsetY <= e.y + 8;
+                if (hit) {
                     addScore();
+                    hitFlashes.push({ x: e.x, y: e.y, timer: 10 });
                 }
-            })
+                return !hit;
+            });
         }
 
         // Score Tally
         function addScore() {
-            score = score += 100;
-            scoreBoard.textContent = score;
+            state.score += 100;
+            scoreBoard.textContent = state.score;
         }
 
-        // Enemy hits player detection
+        // Scale difficulty — thresholds shifted earlier so player experiences
+        // harder speeds before the 3000 win condition is reached
+        function scaleDifficulty() {
+            const s = state.score;
+            if      (s >= 4000) state.perFrameDistance += 0.01;
+            else if (s >= 2400) state.perFrameDistance = 0.9;
+            else if (s >= 1800) state.perFrameDistance = 0.7;
+            else if (s >= 1200) state.perFrameDistance = 0.5;
+            else if (s >= 700)  state.perFrameDistance = 0.3;
+            else if (s >= 300)  state.perFrameDistance = 0.2;
+        }
+
+        // Enemy hits player detection — true removal via filter
         function hitDetect() {
-            xCoords.forEach((value, index) => {
-                let rules = 
-                value >= ((canvasWidth/2) - 15) && 
-                value <= ((canvasWidth/2) + 15) &&
-                yCoords[index] >= ((canvasHeight/2) - 15) &&
-                yCoords[index] <= ((canvasHeight/2) + 15)
-                ;
-                if(rules) {
-                    xCoords.forEach((value, index, arr) => {
-                        if(value >= ((canvasWidth/2) - 15) && value <= ((canvasWidth/2) + 15) && yCoords[index] >= ((canvasHeight/2) - 15) & yCoords[index] <= ((canvasHeight/2) + 15)) {
-                            xCoords[xCoords.indexOf(value)] = 30000;
-                        }
-                    });
-                    yCoords.forEach((value, index, arr) => {
-                        if(value >= ((canvasWidth/2) - 15) && value <= ((canvasWidth/2) + 15) && yCoords[index] >= ((canvasHeight/2) - 15) && yCoords[index] <= ((canvasHeight/2) + 15)) {
-                            yCoords[yCoords.indexOf(value)] = 30000;
-                        }
-                    });
-                    takeHealth();
-                }
+            enemies = enemies.filter(e => {
+                const hit =
+                    Math.abs(e.x - centerX) < 15 &&
+                    Math.abs(e.y - centerY) < 15;
+                if (hit) takeHealth();
+                return !hit;
             });
         }
 
         // Remove Health
         function takeHealth() {
-            health = health -= 5;
-            healthBar.style.width = `${health}%`; 
+            state.health = Math.max(0, state.health - 5);
+            healthBar.style.width = `${state.health}%`;
         }
 
         // Game loop function
-        function gameLoop(){
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             playerTurret.render();
-            turretBarrel(canvasWidth/2, canvasHeight/2, cursorPosX, cursorPosY, 25);
-            turretTarget(ctx, cursorPosX, cursorPosY);
-            spawnNewEnemy();
-            diffFn(); 
+            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
+            turretTarget(cursorPosX, cursorPosY);
+            renderEnemies();
+            renderHitFlashes();
+            scaleDifficulty();
             hitDetect();
-            if(score >= 3000 && health > 0) {
+
+            if (state.score >= 3000 && state.health > 0) {
                 gameWin();
-            } else if(lives > 0 && health <= 1) {
-                lives = lives -= 1;
-                livesText.textContent = lives;
-                health = 100;
-                healthBar.style.width = `${health}%`;
-            } else if (health <= 1 && lives === 0) {
+            } else if (state.health <= 0 && state.lives > 0) {
+                state.lives--;
+                livesText.textContent = state.lives;
+                state.health = 100;
+                healthBar.style.width = '100%';
+            } else if (state.health <= 0 && state.lives === 0) {
                 gameLose();
             }
         }
 
-        // Game functions
-        startButton.addEventListener('click', closeMenu);
-        returnMenuWin.addEventListener('click', startScreenWin);
-        returnMenuLose.addEventListener('click', startScreenLose);
-        resetWin.addEventListener('click', resetGameWin);
-        resetLose.addEventListener('click', resetGameLose);
-        
+        // Reset all game state
         function defaults() {
-            xCoords = [];
-            yCoords = [];
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            scoreBoard.textContent = '0'
-            score = 0;
-            health = 100;
-            lives = 3;
-            livesText.textContent = lives;
-            perFrameDistance = .1;
-            healthBar.style.width = `${health}%`;
+            state = {
+                score: 0,
+                health: 100,
+                lives: 3,
+                perFrameDistance: 0.1
+            };
+            enemies = [];
+            hitFlashes = [];
+            scoreBoard.textContent = '0';
+            livesText.textContent = '3';
+            healthBar.style.width = '100%';
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         }
 
-        function resetGameWin() {
-            winMenu.style.display = 'none';
+        // Clear all running intervals
+        function clearAllIntervals() {
+            clearInterval(gameLoopInt);
+            clearInterval(spawnInt);
+            clearInterval(moveInt);
+            gameLoopInt = null;
+            spawnInt = null;
+            moveInt = null;
+        }
+
+        // Start all game intervals
+        function startIntervals() {
+            gameLoopInt = setInterval(gameLoop, 30);
+            spawnInt = setInterval(spawnEnemy, 1000);
+            moveInt = setInterval(moveEnemies, 20);
+        }
+
+        // Show/hide game HUD
+        function showGame() {
             bottomBar.style.display = 'flex';
             topBar.style.display = 'flex';
             healthText.style.display = 'inline-block';
-            defaults();
-            gameStartInt = setInterval(gameLoop, 30);
         }
-        function resetGameLose() {
-            loseMenu.style.display = 'none';
-            bottomBar.style.display = 'flex';
-            topBar.style.display = 'flex';
-            healthText.style.display = 'inline-block';
-            defaults();
-            gameStartInt = setInterval(gameLoop, 30);
-        }
-        function startScreenWin() {
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            winMenu.style.display = 'none';
-            startMenu.style.display = 'block'
-            bottomBar.style.display = 'none';
-            topBar.style.display = 'none';
-            healthText.style.display = 'none';
-            defaults();
-        }
-        function startScreenLose() {
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            loseMenu.style.display = 'none';
-            startMenu.style.display = 'block'
-            bottomBar.style.display = 'none';
-            topBar.style.display = 'none';
-            healthText.style.display = 'none';
-            defaults();
-        }
-        function winScreen() {
-            winMenu.style.display = 'block';
+        function hideGame() {
             bottomBar.style.display = 'none';
             topBar.style.display = 'none';
             healthText.style.display = 'none';
         }
-        function loseScreen() {
-            loseMenu.style.display = 'block';
-            bottomBar.style.display = 'none';
-            topBar.style.display = 'none';
-            healthText.style.display = 'none';
-        }
-        function closeMenu() {
+
+        // Game functions
+        startButton.addEventListener('click', function() {
             startMenu.style.display = 'none';
-            bottomBar.style.display = 'flex';
-            topBar.style.display = 'flex';
-            healthText.style.display = 'inline-block';
+            showGame();
             defaults();
-            gameStartInt = setInterval(gameLoop, 30);
-        }
-        
-        
+            startIntervals();
+        });
+
+        returnMenuWin.addEventListener('click', function() {
+            winMenu.style.display = 'none';
+            startMenu.style.display = 'block';
+            hideGame();
+            defaults();
+        });
+
+        returnMenuLose.addEventListener('click', function() {
+            loseMenu.style.display = 'none';
+            startMenu.style.display = 'block';
+            hideGame();
+            defaults();
+        });
+
+        resetWin.addEventListener('click', function() {
+            winMenu.style.display = 'none';
+            showGame();
+            defaults();
+            startIntervals();
+        });
+
+        resetLose.addEventListener('click', function() {
+            loseMenu.style.display = 'none';
+            showGame();
+            defaults();
+            startIntervals();
+        });
+
         // End States
         function gameWin() {
-            winScreen();
-            clearInterval(gameStartInt);
+            clearAllIntervals();
+            winMenu.style.display = 'block';
+            hideGame();
         }
         function gameLose() {
-            loseScreen();
-            clearInterval(gameStartInt);
+            clearAllIntervals();
+            loseMenu.style.display = 'block';
+            hideGame();
         }
     }
 
