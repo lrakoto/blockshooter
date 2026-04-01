@@ -240,6 +240,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     let cursorPosX = centerX;
     let cursorPosY = 0;
+    let mouseIsDown = false;
 
     // --- Player ---
     class Player {
@@ -255,7 +256,9 @@ window.addEventListener('DOMContentLoaded', function() {
         cursorPosX = e.clientX - gameCanvas.offsetLeft;
         cursorPosY = e.clientY - gameCanvas.offsetTop;
     });
-    gameCanvas.addEventListener('mousedown', fireAction);
+    gameCanvas.addEventListener('mousedown', () => { mouseIsDown = true; fireAction(); });
+    gameCanvas.addEventListener('mouseup', () => { mouseIsDown = false; });
+    gameCanvas.addEventListener('mouseleave', () => { mouseIsDown = false; });
 
     // Keys 1-5 switch active weapon (if owned)
     window.addEventListener('keydown', e => {
@@ -373,16 +376,21 @@ window.addEventListener('DOMContentLoaded', function() {
         if (!l.type || l.type === 'laser') {
             drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
         } else if (l.type === 'bullet') {
-            // Short muzzle tracer from center in shot direction
+            // Full-length tracer: dim yellow line + bright white core near muzzle
             const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
             const mag = Math.hypot(dx, dy) || 1;
             ctx.save();
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = l.alpha * 0.7;
+            ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 8;
+            ctx.strokeStyle = '#ffdd66'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
             ctx.globalAlpha = l.alpha;
-            ctx.shadowColor = '#ffdd44'; ctx.shadowBlur = 12;
-            ctx.strokeStyle = '#ffee88'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+            ctx.shadowBlur = 14;
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(l.x1, l.y1);
-            ctx.lineTo(l.x1 + (dx / mag) * 45, l.y1 + (dy / mag) * 45);
+            ctx.lineTo(l.x1 + (dx / mag) * 70, l.y1 + (dy / mag) * 70);
             ctx.stroke();
             ctx.restore();
         } else if (l.type === 'shell') {
@@ -520,13 +528,13 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Fire ---
-    function fireAction(event) {
+    function fireAction() {
         if (!state.weapons) return;
         const now = Date.now();
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
 
-        const tx = event.offsetX, ty = event.offsetY;
+        const tx = cursorPosX, ty = cursorPosY;
 
         // Muzzle flash at barrel tip
         const fireInterval = setInterval(function() {
@@ -723,6 +731,7 @@ window.addEventListener('DOMContentLoaded', function() {
         renderRocketTrails();
         renderBombEffects();
         renderParticles();
+        if (mouseIsDown && state.activeWeapon === 'gatling') fireAction();
         hitDetect();
         checkLevelUp();
 
