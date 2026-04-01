@@ -18,8 +18,6 @@
         const healthBar = document.querySelector('#health');
         const turret = document.querySelector('#turret');
         let audioCtx = null;
-        let bgPlaying = false;
-        let bgLoopTimer = null;
 
         function ensureAudioCtx() {
             if (!audioCtx) {
@@ -63,154 +61,57 @@
             const ac = audioCtx;
             const t = ac.currentTime;
 
-            // Filtered noise — crackling attack that decays into a low rumble
-            const bufSize = Math.floor(ac.sampleRate * 0.5);
-            const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
-            const data = buf.getChannelData(0);
-            for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-            const noise = ac.createBufferSource();
-            noise.buffer = buf;
-            const filter = ac.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(4000, t);
-            filter.frequency.exponentialRampToValueAtTime(150, t + 0.45);
-            const noiseGain = ac.createGain();
-            noise.connect(filter);
-            filter.connect(noiseGain);
-            noiseGain.connect(ac.destination);
-            noiseGain.gain.setValueAtTime(0.55, t);
-            noiseGain.gain.setValueAtTime(0.4, t + 0.05);
-            noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-            noise.start(t);
-            noise.stop(t + 0.5);
+            // Sharp crack — short full-spectrum burst on the attack
+            const crackBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.06), ac.sampleRate);
+            const crackData = crackBuf.getChannelData(0);
+            for (let i = 0; i < crackData.length; i++) crackData[i] = Math.random() * 2 - 1;
+            const crack = ac.createBufferSource();
+            crack.buffer = crackBuf;
+            const crackGain = ac.createGain();
+            crack.connect(crackGain);
+            crackGain.connect(ac.destination);
+            crackGain.gain.setValueAtTime(1.0, t);
+            crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+            crack.start(t);
 
-            // Deep boom — sine sweeping into sub-bass
-            const boom = ac.createOscillator();
-            const boomGain = ac.createGain();
-            boom.connect(boomGain);
-            boomGain.connect(ac.destination);
-            boom.type = 'sine';
-            boom.frequency.setValueAtTime(240, t);
-            boom.frequency.exponentialRampToValueAtTime(28, t + 0.45);
-            boomGain.gain.setValueAtTime(0.65, t);
-            boomGain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
-            boom.start(t);
-            boom.stop(t + 0.45);
+            // Low rumble — heavily low-passed noise that lingers
+            const rumbleBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.8), ac.sampleRate);
+            const rumbleData = rumbleBuf.getChannelData(0);
+            for (let i = 0; i < rumbleData.length; i++) rumbleData[i] = Math.random() * 2 - 1;
+            const rumble = ac.createBufferSource();
+            rumble.buffer = rumbleBuf;
+            const lowpass = ac.createBiquadFilter();
+            lowpass.type = 'lowpass';
+            lowpass.frequency.setValueAtTime(300, t);
+            lowpass.frequency.exponentialRampToValueAtTime(60, t + 0.7);
+            const rumbleGain = ac.createGain();
+            rumble.connect(lowpass);
+            lowpass.connect(rumbleGain);
+            rumbleGain.connect(ac.destination);
+            rumbleGain.gain.setValueAtTime(0.7, t);
+            rumbleGain.gain.setValueAtTime(0.5, t + 0.05);
+            rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+            rumble.start(t);
 
-            // Mid crunch — sawtooth snap on the attack
-            const crunch = ac.createOscillator();
-            const crunchGain = ac.createGain();
-            crunch.connect(crunchGain);
-            crunchGain.connect(ac.destination);
-            crunch.type = 'sawtooth';
-            crunch.frequency.setValueAtTime(180, t);
-            crunch.frequency.exponentialRampToValueAtTime(40, t + 0.18);
-            crunchGain.gain.setValueAtTime(0.25, t);
-            crunchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-            crunch.start(t);
-            crunch.stop(t + 0.18);
+            // Mid debris — bandpass noise for the shrapnel texture
+            const debrisBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.35), ac.sampleRate);
+            const debrisData = debrisBuf.getChannelData(0);
+            for (let i = 0; i < debrisData.length; i++) debrisData[i] = Math.random() * 2 - 1;
+            const debris = ac.createBufferSource();
+            debris.buffer = debrisBuf;
+            const bandpass = ac.createBiquadFilter();
+            bandpass.type = 'bandpass';
+            bandpass.frequency.value = 800;
+            bandpass.Q.value = 0.8;
+            const debrisGain = ac.createGain();
+            debris.connect(bandpass);
+            bandpass.connect(debrisGain);
+            debrisGain.connect(ac.destination);
+            debrisGain.gain.setValueAtTime(0.4, t);
+            debrisGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+            debris.start(t);
         }
 
-        // Schedule a single chiptune note
-        function scheduleNote(freq, startTime, duration, type, vol) {
-            const ac = audioCtx;
-            const osc = ac.createOscillator();
-            const gain = ac.createGain();
-            osc.connect(gain);
-            gain.connect(ac.destination);
-            osc.type = type;
-            osc.frequency.value = freq;
-            gain.gain.setValueAtTime(vol, startTime);
-            gain.gain.setValueAtTime(vol, startTime + duration * 0.8);
-            gain.gain.linearRampToValueAtTime(0, startTime + duration);
-            osc.start(startTime);
-            osc.stop(startTime + duration + 0.01);
-        }
-
-        function playBgLoop() {
-            const ac = audioCtx;
-            const t = ac.currentTime;
-            const q = 0.5, e = 0.25, h = 1.0; // quarter, eighth, half at 120bpm
-
-            // Melody — OoT-inspired, A natural minor, 4 sections × 8s = ~32s loop
-            // Triangle wave for a warm flute-like chiptune tone
-            const mel = [
-                // A — adventure ascent
-                [440,e],[523,e],[659,q],  [587,e],[523,e],[494,q],
-                [440,e],[494,e],[523,e],[587,e],[659,h],
-                [392,e],[440,e],[494,q],  [440,e],[392,e],[330,q],
-                [440,h],[0,e],[440,e],[494,e],[523,e],
-
-                // B — Saria-ish, playful descent
-                [659,e],[587,e],[523,q],  [494,e],[440,e],[392,q],
-                [349,e],[392,e],[440,q],  [392,e],[349,e],[330,q],
-                [294,e],[330,e],[349,e],[392,e],[440,h],
-                [392,e],[349,e],[330,q],  [440,h],
-
-                // C — peak, open Gerudo-inflected phrase
-                [659,q],[698,q],[659,q],[587,q],
-                [523,e],[587,e],[659,q],[523,h],
-                [494,e],[523,e],[587,q],[494,q],[440,q],
-                [440,h],[0,h],
-
-                // D — resolution back to root
-                [440,e],[392,e],[349,q],[330,q],[294,q],
-                [262,e],[294,e],[330,q],[220,h],
-                [330,e],[349,e],[392,q],[440,q],[330,q],
-                [220,h],[0,h],
-            ];
-            let mt = t;
-            mel.forEach(([f, d]) => {
-                if (f > 0) scheduleNote(f, mt, d, 'triangle', 0.045);
-                mt += d;
-            });
-
-            // Bass — arpeggiated Am/Em/F/G, square wave
-            const bass = [
-                [220,q],[330,q],[220,q],[330,q],  // Am
-                [165,q],[247,q],[165,q],[247,q],  // Em
-                [220,q],[330,q],[220,q],[330,q],  // Am
-                [165,q],[247,q],[165,q],[247,q],  // Em
-
-                [175,q],[262,q],[175,q],[262,q],  // F
-                [196,q],[294,q],[196,q],[294,q],  // G
-                [220,q],[330,q],[220,q],[330,q],  // Am
-                [165,q],[247,q],[165,q],[247,q],  // Em
-
-                [220,q],[330,q],[220,q],[330,q],  // Am
-                [131,q],[196,q],[131,q],[196,q],  // C
-                [196,q],[294,q],[196,q],[294,q],  // G
-                [220,q],[330,q],[220,q],[330,q],  // Am
-
-                [175,q],[262,q],[175,q],[262,q],  // F
-                [110,q],[220,q],[110,q],[220,q],  // A
-                [165,q],[247,q],[165,q],[247,q],  // Em
-                [110,q],[165,q],[110,q],[165,q],  // A low
-            ];
-            let bt = t;
-            bass.forEach(([f, d]) => {
-                scheduleNote(f, bt, d, 'square', 0.025);
-                bt += d;
-            });
-
-            return mel.reduce((s, [, d]) => s + d, 0) * 1000;
-        }
-
-        function startBgMusic() {
-            ensureAudioCtx();
-            bgPlaying = true;
-            function loop() {
-                if (!bgPlaying) return;
-                const dur = playBgLoop();
-                bgLoopTimer = setTimeout(loop, dur - 80);
-            }
-            loop();
-        }
-
-        function stopBgMusic() {
-            bgPlaying = false;
-            clearTimeout(bgLoopTimer);
-        }
         const ctx = gameCanvas.getContext('2d');
 
         // Canvas Setup
@@ -453,15 +354,20 @@
             }, 10);
             setTimeout(() => clearInterval(fireInterval), 50);
 
-            // Hit detection — single pass, enemies truly removed via filter
+            // Ray hit detection — check distance from each enemy center to the
+            // laser line segment (turret → click), not just the click point
+            const x1 = centerX, y1 = centerY;
+            const x2 = event.offsetX, y2 = event.offsetY;
+            const dx = x2 - x1, dy = y2 - y1;
+            const lenSq = dx * dx + dy * dy;
             enemies = enemies.filter(e => {
-                const hit =
-                    event.offsetX >= e.x - 8 && event.offsetX <= e.x + 8 &&
-                    event.offsetY >= e.y - 8 && event.offsetY <= e.y + 8;
-                if (hit) {
-                    addScore();
-                    spawnExplosion(e.x, e.y);
-                }
+                // Project enemy onto the ray, clamp to segment, measure distance
+                const t = lenSq > 0
+                    ? Math.max(0, Math.min(1, ((e.x - x1) * dx + (e.y - y1) * dy) / lenSq))
+                    : 0;
+                const nearX = x1 + t * dx, nearY = y1 + t * dy;
+                const hit = Math.hypot(e.x - nearX, e.y - nearY) < 10;
+                if (hit) { addScore(); spawnExplosion(e.x, e.y); }
                 return !hit;
             });
         }
@@ -550,7 +456,6 @@
             gameLoopInt = null;
             spawnInt = null;
             moveInt = null;
-            stopBgMusic();
         }
 
         // Start all game intervals
@@ -558,7 +463,6 @@
             gameLoopInt = setInterval(gameLoop, 30);
             spawnInt = setInterval(spawnEnemy, 1000);
             moveInt = setInterval(moveEnemies, 20);
-            startBgMusic();
         }
 
         // Show/hide game HUD
