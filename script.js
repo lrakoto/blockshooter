@@ -117,6 +117,75 @@ window.addEventListener('DOMContentLoaded', function() {
         bits.stop(t + tailDur); lfo.stop(t + tailDur);
     }
 
+    function playGatlingSound() {
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const len = Math.floor(ac.sampleRate * 0.025);
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const bp = ac.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 2.5;
+        const gain = ac.createGain();
+        src.connect(bp); bp.connect(gain); gain.connect(ac.destination);
+        gain.gain.setValueAtTime(0.45, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        src.start(t);
+    }
+
+    function playShotgunSound() {
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const thump = ac.createOscillator();
+        const tGain = ac.createGain();
+        thump.connect(tGain); tGain.connect(ac.destination);
+        thump.type = 'sine';
+        thump.frequency.setValueAtTime(110, t);
+        thump.frequency.exponentialRampToValueAtTime(28, t + 0.13);
+        tGain.gain.setValueAtTime(0.75, t);
+        tGain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        thump.start(t); thump.stop(t + 0.16);
+        const len = Math.floor(ac.sampleRate * 0.13);
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const lp = ac.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 1400;
+        const gain = ac.createGain();
+        src.connect(lp); lp.connect(gain); gain.connect(ac.destination);
+        gain.gain.setValueAtTime(0.8, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+        src.start(t);
+    }
+
+    function playRailgunSound() {
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.connect(gain); gain.connect(ac.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(2800, t);
+        osc.frequency.exponentialRampToValueAtTime(300, t + 0.07);
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+        osc.start(t); osc.stop(t + 0.09);
+        // Metallic ring decay
+        const ring = ac.createOscillator();
+        const rGain = ac.createGain();
+        ring.connect(rGain); rGain.connect(ac.destination);
+        ring.type = 'sine';
+        ring.frequency.setValueAtTime(3400, t);
+        ring.frequency.linearRampToValueAtTime(2900, t + 0.35);
+        rGain.gain.setValueAtTime(0.18, t);
+        rGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        ring.start(t); ring.stop(t + 0.35);
+    }
+
     // --- Canvas Setup ---
     gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
     gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
@@ -150,11 +219,11 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Weapons: cost 0 = default (always owned), cooldown in ms
     const WEAPONS = {
-        laser:    { name: 'LASER',    desc: 'Single precision beam.',              cost: 0,   cooldown: 250  },
-        rapid:    { name: 'RAPID',    desc: 'Laser at 3x fire rate.',              cost: 400, cooldown: 80   },
-        spread:   { name: 'SPREAD',   desc: 'Three beams in a cone.',              cost: 300, cooldown: 350  },
-        piercing: { name: 'PIERCING', desc: 'Beam cuts through all enemies.',      cost: 500, cooldown: 300  },
-        bomb:     { name: 'BOMB',     desc: 'Blast radius — destroys all nearby.', cost: 600, cooldown: 1200 },
+        laser:   { name: 'LASER',   desc: 'Single precision beam.',                cost: 0,   cooldown: 250  },
+        gatling: { name: 'GATLING', desc: 'Rapid kinetic rounds. High fire rate.',  cost: 350, cooldown: 65   },
+        shotgun: { name: 'SHOTGUN', desc: '6 pellets wide cone. Short range.',      cost: 300, cooldown: 500  },
+        railgun: { name: 'RAILGUN', desc: 'Piercing slug. 2 damage per enemy hit.', cost: 500, cooldown: 800  },
+        rocket:  { name: 'ROCKET',  desc: 'AOE blast. Large radius. Slow reload.',  cost: 600, cooldown: 1400 },
     };
 
     // --- Game State ---
@@ -163,6 +232,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let particles   = [];
     let laserTrails = [];
     let bombEffects = [];
+    let rocketTrails = [];
 
     let gameLoopInt = null;
     let spawnInt    = null;
@@ -189,7 +259,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Keys 1-5 switch active weapon (if owned)
     window.addEventListener('keydown', e => {
-        const map = { '1': 'laser', '2': 'rapid', '3': 'spread', '4': 'piercing', '5': 'bomb' };
+        const map = { '1': 'laser', '2': 'gatling', '3': 'shotgun', '4': 'railgun', '5': 'rocket' };
         const w = map[e.key];
         if (w && state.weapons && state.weapons.includes(w)) setWeapon(w);
     });
@@ -299,11 +369,52 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.restore();
     }
 
+    function drawTrail(l) {
+        if (!l.type || l.type === 'laser') {
+            drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
+        } else if (l.type === 'bullet') {
+            // Short muzzle tracer from center in shot direction
+            const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
+            const mag = Math.hypot(dx, dy) || 1;
+            ctx.save();
+            ctx.globalAlpha = l.alpha;
+            ctx.shadowColor = '#ffdd44'; ctx.shadowBlur = 12;
+            ctx.strokeStyle = '#ffee88'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(l.x1, l.y1);
+            ctx.lineTo(l.x1 + (dx / mag) * 45, l.y1 + (dy / mag) * 45);
+            ctx.stroke();
+            ctx.restore();
+        } else if (l.type === 'shell') {
+            // Shotgun pellet — warm orange line to range endpoint
+            ctx.save();
+            ctx.globalAlpha = l.alpha;
+            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 8;
+            ctx.strokeStyle = '#ffaa44'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+            ctx.restore();
+        } else if (l.type === 'rail') {
+            // Silver/indigo full-length piercing streak
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = l.alpha * 0.4;
+            ctx.shadowColor = '#aabbff'; ctx.shadowBlur = 35;
+            ctx.strokeStyle = '#6677cc'; ctx.lineWidth = 10;
+            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+            ctx.globalAlpha = l.alpha;
+            ctx.shadowBlur = 10;
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+            ctx.restore();
+        }
+    }
+
     function renderLaserTrails() {
         laserTrails = laserTrails.filter(l => l.alpha > 0);
         laserTrails.forEach(l => {
-            drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
-            l.alpha -= 0.15;
+            drawTrail(l);
+            const fadeRate = l.type === 'bullet' ? 0.3 : l.type === 'shell' ? 0.25 : 0.15;
+            l.alpha -= fadeRate;
         });
     }
 
@@ -319,6 +430,34 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.fillStyle = '#ff6600'; ctx.fill();
             ctx.restore();
             b.radius += 5; b.alpha -= 0.06;
+        });
+    }
+
+    function renderRocketTrails() {
+        rocketTrails = rocketTrails.filter(r => {
+            r.progress += 0.09;
+            if (r.progress >= 1) {
+                bombEffects.push({ x: r.x2, y: r.y2, radius: 5, alpha: 1 });
+                return false;
+            }
+            return true;
+        });
+        rocketTrails.forEach(r => {
+            const rx = r.x1 + (r.x2 - r.x1) * r.progress;
+            const ry = r.y1 + (r.y2 - r.y1) * r.progress;
+            const dx = r.x2 - r.x1, dy = r.y2 - r.y1;
+            const mag = Math.hypot(dx, dy) || 1;
+            ctx.save();
+            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 18;
+            ctx.fillStyle = '#ffcc44';
+            ctx.beginPath(); ctx.arc(rx, ry, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 0.55;
+            ctx.strokeStyle = '#ff4400'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx - (dx / mag) * 22, ry - (dy / mag) * 22);
+            ctx.stroke();
+            ctx.restore();
         });
     }
 
@@ -356,8 +495,8 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Hit Logic ---
 
     // Returns false (remove enemy) if dead, true (keep) if still alive
-    function hitEnemy(e) {
-        e.hp--;
+    function hitEnemy(e, damage = 1) {
+        e.hp -= damage;
         if (e.hp <= 0) {
             state.levelKills++;
             state.kills++;
@@ -387,8 +526,6 @@ window.addEventListener('DOMContentLoaded', function() {
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
 
-        playLaserSound();
-
         const tx = event.offsetX, ty = event.offsetY;
 
         // Muzzle flash at barrel tip
@@ -406,52 +543,62 @@ window.addEventListener('DOMContentLoaded', function() {
 
         const w = state.activeWeapon;
 
-        if (w === 'bomb') {
-            // AOE — hits all enemies within radius
-            const bombR = 90;
-            bombEffects.push({ x: tx, y: ty, radius: 5, alpha: 1 });
-            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1 });
-            enemies = enemies.filter(e => {
-                if (Math.hypot(e.x - tx, e.y - ty) < bombR) return hitEnemy(e);
-                return true;
-            });
-
-        } else if (w === 'spread') {
-            // Three rays in a cone, each hits first enemy in its path
-            const baseAngle = Math.atan2(ty - centerY, tx - centerX);
-            const dist = Math.hypot(tx - centerX, ty - centerY) || canvasWidth;
-            [-0.22, 0, 0.22].forEach(offset => {
-                const a = baseAngle + offset;
-                const ex = centerX + Math.cos(a) * dist;
-                const ey = centerY + Math.sin(a) * dist;
-                laserTrails.push({ x1: centerX, y1: centerY, x2: ex, y2: ey, alpha: 1 });
-                let firstHit = false;
-                enemies = enemies.filter(e => {
-                    if (!firstHit && rayHitsEnemy(e, centerX, centerY, ex, ey)) {
-                        firstHit = true;
-                        return hitEnemy(e);
-                    }
-                    return true;
-                });
-            });
-
-        } else if (w === 'piercing') {
-            // Single ray — hits ALL enemies along its path
-            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1 });
-            enemies = enemies.filter(e => {
-                if (rayHitsEnemy(e, centerX, centerY, tx, ty)) return hitEnemy(e);
-                return true;
-            });
-
-        } else {
-            // laser / rapid — single ray, hits first enemy only
-            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1 });
+        if (w === 'laser') {
+            playLaserSound();
+            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1, type: 'laser' });
             let firstHit = false;
             enemies = enemies.filter(e => {
                 if (!firstHit && rayHitsEnemy(e, centerX, centerY, tx, ty)) {
-                    firstHit = true;
-                    return hitEnemy(e);
+                    firstHit = true; return hitEnemy(e);
                 }
+                return true;
+            });
+
+        } else if (w === 'gatling') {
+            playGatlingSound();
+            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1, type: 'bullet' });
+            let firstHit = false;
+            enemies = enemies.filter(e => {
+                if (!firstHit && rayHitsEnemy(e, centerX, centerY, tx, ty)) {
+                    firstHit = true; return hitEnemy(e);
+                }
+                return true;
+            });
+
+        } else if (w === 'shotgun') {
+            playShotgunSound();
+            const baseAngle = Math.atan2(ty - centerY, tx - centerX);
+            const range = Math.min(canvasWidth, canvasHeight) * 0.65;
+            for (let i = 0; i < 6; i++) {
+                const spread = 0.70;
+                const offset = -spread / 2 + (spread / 5) * i + (Math.random() - 0.5) * 0.1;
+                const a = baseAngle + offset;
+                const ex = centerX + Math.cos(a) * range;
+                const ey = centerY + Math.sin(a) * range;
+                laserTrails.push({ x1: centerX, y1: centerY, x2: ex, y2: ey, alpha: 1, type: 'shell' });
+                let firstHit = false;
+                enemies = enemies.filter(e => {
+                    if (!firstHit && rayHitsEnemy(e, centerX, centerY, ex, ey)) {
+                        firstHit = true; return hitEnemy(e);
+                    }
+                    return true;
+                });
+            }
+
+        } else if (w === 'railgun') {
+            playRailgunSound();
+            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1, type: 'rail' });
+            enemies = enemies.filter(e => {
+                if (rayHitsEnemy(e, centerX, centerY, tx, ty)) return hitEnemy(e, 2);
+                return true;
+            });
+
+        } else if (w === 'rocket') {
+            playExplosionSound();
+            rocketTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, progress: 0 });
+            const bombR = 130;
+            enemies = enemies.filter(e => {
+                if (Math.hypot(e.x - tx, e.y - ty) < bombR) return hitEnemy(e);
                 return true;
             });
         }
@@ -573,6 +720,7 @@ window.addEventListener('DOMContentLoaded', function() {
         turretTarget(cursorPosX, cursorPosY);
         renderEnemies();
         renderLaserTrails();
+        renderRocketTrails();
         renderBombEffects();
         renderParticles();
         hitDetect();
@@ -616,7 +764,7 @@ window.addEventListener('DOMContentLoaded', function() {
             fireCooldown: WEAPONS.laser.cooldown,
             lastFired: 0,
         };
-        enemies = []; particles = []; laserTrails = []; bombEffects = [];
+        enemies = []; particles = []; laserTrails = []; bombEffects = []; rocketTrails = [];
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
         creditsDisplay.textContent = '0';
