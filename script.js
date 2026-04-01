@@ -61,34 +61,54 @@
         function playExplosionSound() {
             ensureAudioCtx();
             const ac = audioCtx;
+            const t = ac.currentTime;
 
-            // Noise burst for crack/crunch
-            const bufSize = Math.floor(ac.sampleRate * 0.1);
+            // Filtered noise — crackling attack that decays into a low rumble
+            const bufSize = Math.floor(ac.sampleRate * 0.5);
             const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
             const data = buf.getChannelData(0);
             for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
             const noise = ac.createBufferSource();
             noise.buffer = buf;
+            const filter = ac.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(4000, t);
+            filter.frequency.exponentialRampToValueAtTime(150, t + 0.45);
             const noiseGain = ac.createGain();
-            noise.connect(noiseGain);
+            noise.connect(filter);
+            filter.connect(noiseGain);
             noiseGain.connect(ac.destination);
-            noiseGain.gain.setValueAtTime(0.35, ac.currentTime);
-            noiseGain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.1);
-            noise.start(ac.currentTime);
-            noise.stop(ac.currentTime + 0.1);
+            noiseGain.gain.setValueAtTime(0.55, t);
+            noiseGain.gain.setValueAtTime(0.4, t + 0.05);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+            noise.start(t);
+            noise.stop(t + 0.5);
 
-            // Low thump
-            const osc = ac.createOscillator();
-            const oscGain = ac.createGain();
-            osc.connect(oscGain);
-            oscGain.connect(ac.destination);
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(180, ac.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(40, ac.currentTime + 0.12);
-            oscGain.gain.setValueAtTime(0.3, ac.currentTime);
-            oscGain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.12);
-            osc.start(ac.currentTime);
-            osc.stop(ac.currentTime + 0.12);
+            // Deep boom — sine sweeping into sub-bass
+            const boom = ac.createOscillator();
+            const boomGain = ac.createGain();
+            boom.connect(boomGain);
+            boomGain.connect(ac.destination);
+            boom.type = 'sine';
+            boom.frequency.setValueAtTime(240, t);
+            boom.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+            boomGain.gain.setValueAtTime(0.65, t);
+            boomGain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+            boom.start(t);
+            boom.stop(t + 0.45);
+
+            // Mid crunch — sawtooth snap on the attack
+            const crunch = ac.createOscillator();
+            const crunchGain = ac.createGain();
+            crunch.connect(crunchGain);
+            crunchGain.connect(ac.destination);
+            crunch.type = 'sawtooth';
+            crunch.frequency.setValueAtTime(180, t);
+            crunch.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+            crunchGain.gain.setValueAtTime(0.25, t);
+            crunchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+            crunch.start(t);
+            crunch.stop(t + 0.18);
         }
 
         // Schedule a single chiptune note
@@ -110,35 +130,66 @@
         function playBgLoop() {
             const ac = audioCtx;
             const t = ac.currentTime;
-            const e = 0.14; // eighth note at ~215bpm — fast and urgent
+            const q = 0.5, e = 0.25, h = 1.0; // quarter, eighth, half at 120bpm
 
-            // Melody: square wave, C minor
+            // Melody — OoT-inspired, A natural minor, 4 sections × 8s = ~32s loop
+            // Triangle wave for a warm flute-like chiptune tone
             const mel = [
-                [523,e],[622,e],[784,e*2],[0,e*0.5],
-                [698,e],[622,e],[523,e*2],[0,e],
-                [466,e],[523,e],[622,e*1.5],[0,e*0.5],
-                [523,e],[415,e*3],[0,e],
-                [392,e],[466,e],[523,e*2],[0,e*0.5],
-                [622,e],[523,e],[466,e*2],[0,e],
-                [415,e],[466,e],[523,e*1.5],[0,e*0.5],
-                [392,e*4],
+                // A — adventure ascent
+                [440,e],[523,e],[659,q],  [587,e],[523,e],[494,q],
+                [440,e],[494,e],[523,e],[587,e],[659,h],
+                [392,e],[440,e],[494,q],  [440,e],[392,e],[330,q],
+                [440,h],[0,e],[440,e],[494,e],[523,e],
+
+                // B — Saria-ish, playful descent
+                [659,e],[587,e],[523,q],  [494,e],[440,e],[392,q],
+                [349,e],[392,e],[440,q],  [392,e],[349,e],[330,q],
+                [294,e],[330,e],[349,e],[392,e],[440,h],
+                [392,e],[349,e],[330,q],  [440,h],
+
+                // C — peak, open Gerudo-inflected phrase
+                [659,q],[698,q],[659,q],[587,q],
+                [523,e],[587,e],[659,q],[523,h],
+                [494,e],[523,e],[587,q],[494,q],[440,q],
+                [440,h],[0,h],
+
+                // D — resolution back to root
+                [440,e],[392,e],[349,q],[330,q],[294,q],
+                [262,e],[294,e],[330,q],[220,h],
+                [330,e],[349,e],[392,q],[440,q],[330,q],
+                [220,h],[0,h],
             ];
             let mt = t;
             mel.forEach(([f, d]) => {
-                if (f > 0) scheduleNote(f, mt, d, 'square', 0.04);
+                if (f > 0) scheduleNote(f, mt, d, 'triangle', 0.045);
                 mt += d;
             });
 
-            // Bass: triangle wave, one octave down
+            // Bass — arpeggiated Am/Em/F/G, square wave
             const bass = [
-                [130,e*4],[174,e*4],
-                [155,e*4],[130,e*4],
-                [196,e*4],[174,e*4],
-                [130,e*4],[196,e*4],
+                [220,q],[330,q],[220,q],[330,q],  // Am
+                [165,q],[247,q],[165,q],[247,q],  // Em
+                [220,q],[330,q],[220,q],[330,q],  // Am
+                [165,q],[247,q],[165,q],[247,q],  // Em
+
+                [175,q],[262,q],[175,q],[262,q],  // F
+                [196,q],[294,q],[196,q],[294,q],  // G
+                [220,q],[330,q],[220,q],[330,q],  // Am
+                [165,q],[247,q],[165,q],[247,q],  // Em
+
+                [220,q],[330,q],[220,q],[330,q],  // Am
+                [131,q],[196,q],[131,q],[196,q],  // C
+                [196,q],[294,q],[196,q],[294,q],  // G
+                [220,q],[330,q],[220,q],[330,q],  // Am
+
+                [175,q],[262,q],[175,q],[262,q],  // F
+                [110,q],[220,q],[110,q],[220,q],  // A
+                [165,q],[247,q],[165,q],[247,q],  // Em
+                [110,q],[165,q],[110,q],[165,q],  // A low
             ];
             let bt = t;
             bass.forEach(([f, d]) => {
-                scheduleNote(f, bt, d, 'triangle', 0.045);
+                scheduleNote(f, bt, d, 'square', 0.025);
                 bt += d;
             });
 
@@ -258,6 +309,37 @@
             ctx.stroke();
         }
 
+        // Muzzle flash starburst at the barrel tip
+        function drawMuzzleFlash(x, y) {
+            ctx.save();
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 25;
+            // Outer glow
+            ctx.globalAlpha = 0.4;
+            ctx.fillStyle = '#88ccff';
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            // Bright core
+            ctx.globalAlpha = 0.95;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            // Radial spikes
+            ctx.strokeStyle = '#aaddff';
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.75;
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI / 3) * i;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
         // Turret Muzzle Target
         function turretTarget(x, y) {
             ctx.strokeStyle = 'red';
@@ -311,7 +393,7 @@
             laserTrails = laserTrails.filter(l => l.alpha > 0);
             laserTrails.forEach(l => {
                 drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
-                l.alpha -= 0.08;
+                l.alpha -= 0.15;
             });
         }
 
@@ -357,10 +439,17 @@
             // Add a laser trail — glow + afterimage handled by renderLaserTrails()
             laserTrails.push({ x1: centerX, y1: centerY, x2: cursorPosX, y2: cursorPosY, alpha: 1 });
 
-            // Brief muzzle flash on the barrel
+            // Brief muzzle flash at the barrel tip
             const fireInterval = setInterval(function() {
                 turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
                 turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
+                const dx = cursorPosX - centerX;
+                const dy = cursorPosY - centerY;
+                const mag = Math.sqrt(dx * dx + dy * dy);
+                if (mag > 0) {
+                    const s = Math.min(25, mag) / mag;
+                    drawMuzzleFlash(centerX + dx * s, centerY + dy * s);
+                }
             }, 10);
             setTimeout(() => clearInterval(fireInterval), 50);
 
