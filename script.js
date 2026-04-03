@@ -38,6 +38,7 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     function playLaserSound() {
+        // retained but unused
         ensureAudioCtx();
         const t = audioCtx.currentTime;
         const osc = audioCtx.createOscillator();
@@ -324,22 +325,19 @@ window.addEventListener('DOMContentLoaded', function() {
         'Final wave. Maximum threat level. Hold the line, Cadet.',
     ];
 
-    // Weapons: cost 0 = default (always owned), cooldown in ms
-    const WEAPONS = {
-        gatling: { name: 'GATLING', desc: 'Rapid kinetic rounds. Hold to fire.',    cost: 0,   cooldown: 65   },
-        laser:   { name: 'LASER',   desc: 'Precision beam. One-shots any target.',  cost: 500, cooldown: 300  },
-        shotgun: { name: 'SHOTGUN', desc: '6 pellets wide cone. Short range.',      cost: 300, cooldown: 500  },
-        railgun: { name: 'RAILGUN', desc: 'Piercing slug. 2 damage per enemy hit.', cost: 500, cooldown: 800  },
-        rocket:  { name: 'ROCKET',  desc: 'AOE blast. Large radius. Slow reload.',  cost: 600, cooldown: 1400 },
-    };
+    const GATLING_BASE = { cooldown: 65, damage: 0.75, spread: 0.18 };
+
+    // Upgrades offered at each level-up — player picks one
+    const UPGRADES = [
+        { key: 'accuracy',  name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',         apply: s => { s.spread   = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',    name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.25 damage per bullet.',  apply: s => { s.bulletDamage += 0.25; } },
+        { key: 'firerate',  name: 'FIRE RATE', desc: 'Faster cyclic rate. Reduces cooldown by 8ms.',     apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 8); } },
+    ];
 
     // --- Game State ---
     let state = {};
     let enemies     = [];
     let particles   = [];
-    let laserTrails = [];
-    let bombEffects = [];
-    let rocketTrails = [];
     let gatlingBullets = [];
     let shellCasings = [];
     let muzzleFlashFrames = 0;
@@ -371,18 +369,7 @@ window.addEventListener('DOMContentLoaded', function() {
     gameCanvas.addEventListener('mouseup', () => { mouseIsDown = false; });
     gameCanvas.addEventListener('mouseleave', () => { mouseIsDown = false; });
 
-    // Keys 1-5 switch active weapon (if owned)
-    window.addEventListener('keydown', e => {
-        const map = { '1': 'gatling', '2': 'laser', '3': 'shotgun', '4': 'railgun', '5': 'rocket' };
-        const w = map[e.key];
-        if (w && state.weapons && state.weapons.includes(w)) setWeapon(w);
-    });
 
-    function setWeapon(key) {
-        state.activeWeapon = key;
-        state.fireCooldown = WEAPONS[key].cooldown;
-        weaponDisplay.textContent = WEAPONS[key].name;
-    }
 
     // --- Level Helpers ---
     function getLevelDef() {
@@ -529,58 +516,6 @@ window.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function renderLaserTrails() {
-        laserTrails = laserTrails.filter(l => l.alpha > 0);
-        laserTrails.forEach(l => {
-            drawTrail(l);
-            const fadeRate = l.type === 'bullet' ? 0.3 : l.type === 'shell' ? 0.25 : 0.15;
-            l.alpha -= fadeRate;
-        });
-    }
-
-    function renderBombEffects() {
-        bombEffects = bombEffects.filter(b => b.alpha > 0);
-        bombEffects.forEach(b => {
-            ctx.save();
-            ctx.globalAlpha = b.alpha;
-            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 20;
-            ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
-            ctx.globalAlpha = b.alpha * 0.15;
-            ctx.fillStyle = '#ff6600'; ctx.fill();
-            ctx.restore();
-            b.radius += 5; b.alpha -= 0.06;
-        });
-    }
-
-    function renderRocketTrails() {
-        rocketTrails = rocketTrails.filter(r => {
-            r.progress += 0.09;
-            if (r.progress >= 1) {
-                bombEffects.push({ x: r.x2, y: r.y2, radius: 5, alpha: 1 });
-                return false;
-            }
-            return true;
-        });
-        rocketTrails.forEach(r => {
-            const rx = r.x1 + (r.x2 - r.x1) * r.progress;
-            const ry = r.y1 + (r.y2 - r.y1) * r.progress;
-            const dx = r.x2 - r.x1, dy = r.y2 - r.y1;
-            const mag = Math.hypot(dx, dy) || 1;
-            ctx.save();
-            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 18;
-            ctx.fillStyle = '#ffcc44';
-            ctx.beginPath(); ctx.arc(rx, ry, 5, 0, Math.PI * 2); ctx.fill();
-            ctx.globalAlpha = 0.55;
-            ctx.strokeStyle = '#ff4400'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(rx, ry);
-            ctx.lineTo(rx - (dx / mag) * 22, ry - (dy / mag) * 22);
-            ctx.stroke();
-            ctx.restore();
-        });
-    }
-
     function renderGatlingBullets() {
         const remaining = [];
         gatlingBullets.forEach(b => {
@@ -595,7 +530,7 @@ window.addEventListener('DOMContentLoaded', function() {
             let hit = false;
             enemies = enemies.filter(e => {
                 if (!hit && rayHitsEnemy(e, px, py, cx, cy)) {
-                    hit = true; return hitEnemy(e, 0.75);
+                    hit = true; return hitEnemy(e, b.damage);
                 }
                 return true;
             });
@@ -709,7 +644,6 @@ window.addEventListener('DOMContentLoaded', function() {
             state.levelKills++;
             state.kills++;
             addScore(e.maxHp * 100);
-            addCredits(e.maxHp * 75);
             spawnExplosion(e.x, e.y);
             return false;
         }
@@ -743,7 +677,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Fire ---
     function fireAction() {
-        if (!state.weapons) return;
+        if (!state.fireCooldown) return;
         const now = Date.now();
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
@@ -763,87 +697,35 @@ window.addEventListener('DOMContentLoaded', function() {
         }, 10);
         setTimeout(() => clearInterval(fireInterval), 50);
 
-        const w = state.activeWeapon;
+        // Apply spread — random angular offset within ±spread/2
+        const baseAngle = Math.atan2(ty - centerY, tx - centerX);
+        const spreadOffset = (Math.random() - 0.5) * state.spread;
+        const fireAngle = baseAngle + spreadOffset;
+        const fireDx = Math.cos(fireAngle), fireDy = Math.sin(fireAngle);
+        const edge = rayToEdge(centerX, centerY, centerX + fireDx, centerY + fireDy);
 
-        if (w === 'laser') {
-            playLaserSound();
-            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1, type: 'laser' });
-            let firstHit = false;
-            enemies = enemies.filter(e => {
-                if (!firstHit && rayHitsEnemy(e, centerX, centerY, tx, ty)) {
-                    firstHit = true; return hitEnemy(e, 99); // one-shots any target
-                }
-                return true;
-            });
-
-        } else if (w === 'gatling') {
-            playGatlingSound();
-            muzzleFlashAngle = Math.atan2(ty - centerY, tx - centerX);
-            muzzleFlashFrames = 4;
-            const edge = rayToEdge(centerX, centerY, tx, ty);
-            gatlingBullets.push({ x1: centerX, y1: centerY, x2: edge.x, y2: edge.y, progress: 0, trail: [] });
-            // Eject shell casing — top-down, scatter around turret
-            const casingAngle = muzzleFlashAngle - Math.PI / 2 + (Math.random() - 0.5) * 1.4;
-            const casingSpeed = 2.5 + Math.random() * 2.5;
-            shellCasings.push({
-                x: centerX + Math.cos(casingAngle) * 8,
-                y: centerY + Math.sin(casingAngle) * 8,
-                vx: Math.cos(casingAngle) * casingSpeed,
-                vy: Math.sin(casingAngle) * casingSpeed,
-                angle: casingAngle,
-                spin: (Math.random() - 0.5) * 0.3,
-                alpha: 1,
-            });
-            // Hit detection happens per-frame as bullet travels
-
-        } else if (w === 'shotgun') {
-            playShotgunSound();
-            const baseAngle = Math.atan2(ty - centerY, tx - centerX);
-            const range = Math.min(canvasWidth, canvasHeight) * 0.65;
-            for (let i = 0; i < 6; i++) {
-                const spread = 0.70;
-                const offset = -spread / 2 + (spread / 5) * i + (Math.random() - 0.5) * 0.1;
-                const a = baseAngle + offset;
-                const ex = centerX + Math.cos(a) * range;
-                const ey = centerY + Math.sin(a) * range;
-                laserTrails.push({ x1: centerX, y1: centerY, x2: ex, y2: ey, alpha: 1, type: 'shell' });
-                let firstHit = false;
-                enemies = enemies.filter(e => {
-                    if (!firstHit && rayHitsEnemy(e, centerX, centerY, ex, ey)) {
-                        firstHit = true; return hitEnemy(e);
-                    }
-                    return true;
-                });
-            }
-
-        } else if (w === 'railgun') {
-            playRailgunSound();
-            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1, type: 'rail' });
-            enemies = enemies.filter(e => {
-                if (rayHitsEnemy(e, centerX, centerY, tx, ty)) return hitEnemy(e, 2);
-                return true;
-            });
-
-        } else if (w === 'rocket') {
-            playExplosionSound();
-            rocketTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, progress: 0 });
-            const bombR = 130;
-            enemies = enemies.filter(e => {
-                if (Math.hypot(e.x - tx, e.y - ty) < bombR) return hitEnemy(e);
-                return true;
-            });
-        }
+        playGatlingSound();
+        muzzleFlashAngle = fireAngle;
+        muzzleFlashFrames = 4;
+        gatlingBullets.push({ x1: centerX, y1: centerY, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: state.bulletDamage });
+        // Eject shell casing
+        const casingAngle = fireAngle - Math.PI / 2 + (Math.random() - 0.5) * 1.4;
+        const casingSpeed = 2.5 + Math.random() * 2.5;
+        shellCasings.push({
+            x: centerX + Math.cos(casingAngle) * 8,
+            y: centerY + Math.sin(casingAngle) * 8,
+            vx: Math.cos(casingAngle) * casingSpeed,
+            vy: Math.sin(casingAngle) * casingSpeed,
+            angle: casingAngle,
+            spin: (Math.random() - 0.5) * 0.3,
+            alpha: 1,
+        });
     }
 
     // --- Score / Credits ---
     function addScore(points) {
         state.score += points;
         scoreBoard.textContent = state.score;
-    }
-
-    function addCredits(amount) {
-        state.credits += amount;
-        creditsDisplay.textContent = state.credits;
     }
 
     // --- Player Damage ---
@@ -879,8 +761,7 @@ window.addEventListener('DOMContentLoaded', function() {
     function showLevelUpScreen() {
         levelHeading.textContent = `LEVEL ${state.level}`;
         levelDesc.textContent = LEVEL_DESCS[state.level - 1] || '';
-        shopCredits.textContent = state.credits;
-        populateShop();
+        populateUpgrades();
         levelMenu.style.display = 'block';
         hideGame();
     }
@@ -889,52 +770,31 @@ window.addEventListener('DOMContentLoaded', function() {
         levelMenu.style.display = 'none';
     }
 
-    function populateShop() {
+    function populateUpgrades() {
         weaponShop.innerHTML = '';
-        Object.entries(WEAPONS).forEach(([key, w]) => {
-            const owned    = state.weapons.includes(key);
-            const isActive = state.activeWeapon === key;
-
+        UPGRADES.forEach(u => {
             const card = document.createElement('div');
-            card.className = 'weapon-card' + (isActive ? ' active-weapon' : '');
+            card.className = 'weapon-card';
 
             const nameEl = document.createElement('div');
             nameEl.className = 'weapon-name';
-            nameEl.textContent = w.name;
+            nameEl.textContent = u.name;
 
             const descEl = document.createElement('div');
             descEl.className = 'weapon-desc';
-            descEl.textContent = w.desc;
+            descEl.textContent = u.desc;
 
             const actionEl = document.createElement('div');
             actionEl.className = 'weapon-action';
 
-            if (isActive) {
-                actionEl.innerHTML = '<span class="weapon-status">EQUIPPED</span>';
-            } else if (owned) {
-                const btn = document.createElement('button');
-                btn.textContent = 'EQUIP';
-                btn.onclick = () => {
-                    setWeapon(key);
-                    populateShop();
-                    shopCredits.textContent = state.credits;
-                };
-                actionEl.appendChild(btn);
-            } else {
-                const btn = document.createElement('button');
-                btn.textContent = `${w.cost} CR`;
-                btn.disabled = state.credits < w.cost;
-                btn.onclick = () => {
-                    if (state.credits < w.cost) return;
-                    state.credits -= w.cost;
-                    state.weapons.push(key);
-                    setWeapon(key);
-                    creditsDisplay.textContent = state.credits;
-                    shopCredits.textContent = state.credits;
-                    populateShop();
-                };
-                actionEl.appendChild(btn);
-            }
+            const btn = document.createElement('button');
+            btn.textContent = 'SELECT';
+            btn.onclick = () => {
+                u.apply(state);
+                hideLevelUpScreen();
+                startIntervals();
+            };
+            actionEl.appendChild(btn);
 
             card.appendChild(nameEl);
             card.appendChild(descEl);
@@ -950,14 +810,11 @@ window.addEventListener('DOMContentLoaded', function() {
         turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
         turretTarget(cursorPosX, cursorPosY);
         renderEnemies();
-        renderLaserTrails();
-        renderRocketTrails();
         renderGatlingBullets();
         renderShellCasings();
         renderGatlingMuzzleFlash();
-        renderBombEffects();
         renderParticles();
-        if (mouseIsDown && state.activeWeapon === 'gatling') fireAction();
+        if (mouseIsDown) fireAction();
         hitDetect();
         checkLevelUp();
 
@@ -993,16 +850,14 @@ window.addEventListener('DOMContentLoaded', function() {
             level: 1,
             levelKills: 0,
             kills: 0,
-            credits: 0,
-            weapons: ['gatling'],
-            activeWeapon: 'gatling',
-            fireCooldown: WEAPONS.gatling.cooldown,
+            fireCooldown: GATLING_BASE.cooldown,
+            bulletDamage: GATLING_BASE.damage,
+            spread: GATLING_BASE.spread,
             lastFired: 0,
         };
-        enemies = []; particles = []; laserTrails = []; bombEffects = []; rocketTrails = []; gatlingBullets = []; shellCasings = [];
+        enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
-        creditsDisplay.textContent = '0';
         weaponDisplay.textContent = 'GATLING';
         levelDisplay.textContent = '1';
         healthBar.style.width = '100%';
