@@ -62,77 +62,184 @@ window.addEventListener('DOMContentLoaded', function() {
 
     function playExplosionSound() {
         ensureAudioCtx();
-        const ac = audioCtx;
-        const t = ac.currentTime;
-        // Low thump — body of the explosion
-        const thump = ac.createOscillator();
-        const thumpGain = ac.createGain();
-        thump.connect(thumpGain); thumpGain.connect(ac.destination);
-        thump.type = 'sine';
-        thump.frequency.setValueAtTime(160, t);
-        thump.frequency.exponentialRampToValueAtTime(35, t + 0.18);
-        thumpGain.gain.setValueAtTime(0.9, t);
-        thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-        thump.start(t); thump.stop(t + 0.22);
-        // Initial crack — filtered so it's not too sharp/tinny
-        const crackLen = Math.floor(ac.sampleRate * 0.04);
+        const ac = audioCtx, t = ac.currentTime;
+        // Soft-clip waveshaper — adds harmonics to pure sines so they sound bigger
+        const clipCurve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            const x = (i * 2) / 255 - 1;
+            clipCurve[i] = (Math.PI + 300) * x / (Math.PI + 300 * Math.abs(x));
+        }
+        // Hard-clip waveshaper for grit — softer at low freqs to avoid choppiness
+        const gritCurve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            const x = (i * 2) / 255 - 1;
+            gritCurve[i] = Math.max(-0.55, Math.min(0.55, x * 2.2)) / 0.55;
+        }
+        // 0. Kick — sharp bass drum pop at the very start
+        const kick = ac.createOscillator();
+        const kickGain = ac.createGain();
+        kick.connect(kickGain); kickGain.connect(ac.destination);
+        kick.type = 'sine';
+        kick.frequency.setValueAtTime(80, t);
+        kick.frequency.exponentialRampToValueAtTime(28, t + 0.06);
+        kickGain.gain.setValueAtTime(1.2, t);
+        kickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.135);
+        kick.start(t); kick.stop(t + 0.135);
+        // 1. Noise burst — heavily muffled, distant thud (very low LP)
+        const crackLen = Math.floor(ac.sampleRate * 0.9);
         const crackBuf = ac.createBuffer(1, crackLen, ac.sampleRate);
         const cd = crackBuf.getChannelData(0);
         for (let i = 0; i < crackLen; i++) cd[i] = Math.random() * 2 - 1;
         const crack = ac.createBufferSource();
         crack.buffer = crackBuf;
         const crackLP = ac.createBiquadFilter();
-        crackLP.type = 'lowpass'; crackLP.frequency.value = 2200;
+        crackLP.type = 'lowpass'; crackLP.frequency.value = 8;
         const crackGain = ac.createGain();
         crack.connect(crackLP); crackLP.connect(crackGain); crackGain.connect(ac.destination);
-        crackGain.gain.setValueAtTime(1.0, t);
-        crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        crackGain.gain.setValueAtTime(0.0, t);
+        crackGain.gain.linearRampToValueAtTime(0.32, t + 0.41);
+        crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
         crack.start(t);
-        // Debris tail — bandpass noise + slowing LFO, fades fully before stopping
-        const tailDur = 1.1;
-        const bitsLen = Math.floor(ac.sampleRate * tailDur);
-        const bitsBuf = ac.createBuffer(1, bitsLen, ac.sampleRate);
-        const bd = bitsBuf.getChannelData(0);
-        for (let i = 0; i < bitsLen; i++) bd[i] = Math.random() * 2 - 1;
-        const bits = ac.createBufferSource();
-        bits.buffer = bitsBuf;
-        const bp = ac.createBiquadFilter();
-        bp.type = 'bandpass';
-        bp.frequency.setValueAtTime(700, t);
-        bp.frequency.exponentialRampToValueAtTime(150, t + tailDur);
-        bp.Q.value = 0.6;
-        const bitsGain = ac.createGain();
-        bitsGain.gain.setValueAtTime(0.5, t + 0.03);
-        bitsGain.gain.exponentialRampToValueAtTime(0.001, t + tailDur - 0.12); // silent before stop
-        const lfoAmpGain = ac.createGain();
-        lfoAmpGain.gain.setValueAtTime(0.5, t + 0.03);
-        lfoAmpGain.gain.linearRampToValueAtTime(0.0, t + tailDur - 0.15); // LFO fades out cleanly
-        const lfo = ac.createOscillator();
-        lfo.type = 'square';
-        lfo.frequency.setValueAtTime(55, t + 0.03);
-        lfo.frequency.linearRampToValueAtTime(8, t + tailDur);
-        lfo.connect(lfoAmpGain); lfoAmpGain.connect(bitsGain.gain);
-        bits.connect(bp); bp.connect(bitsGain); bitsGain.connect(ac.destination);
-        bits.start(t + 0.03); lfo.start(t + 0.03);
-        bits.stop(t + tailDur); lfo.stop(t + tailDur);
+        // 2. Pressure wave — deep sub sine, what makes it "feel" like a boom
+        const pressure = ac.createOscillator();
+        const pressureShaper = ac.createWaveShaper();
+        pressureShaper.curve = clipCurve; pressureShaper.oversample = '4x';
+        const pressureGain = ac.createGain();
+        pressure.connect(pressureShaper); pressureShaper.connect(pressureGain); pressureGain.connect(ac.destination);
+        pressure.type = 'sine';
+        pressure.frequency.setValueAtTime(1.1, t);
+        pressure.frequency.exponentialRampToValueAtTime(0.22, t + 1.2);
+        pressureGain.gain.setValueAtTime(0.0, t);
+        pressureGain.gain.linearRampToValueAtTime(0.85, t + 0.375);
+        pressureGain.gain.exponentialRampToValueAtTime(0.001, t + 1.35);
+        pressure.start(t); pressure.stop(t + 1.35);
+        // 3. Main thump — slow swell, very low, long decay
+        const thump = ac.createOscillator();
+        const thumpShaper = ac.createWaveShaper();
+        thumpShaper.curve = clipCurve; thumpShaper.oversample = '4x';
+        const thumpGain = ac.createGain();
+        thump.connect(thumpShaper); thumpShaper.connect(thumpGain); thumpGain.connect(ac.destination);
+        thump.type = 'sine';
+        thump.frequency.setValueAtTime(2.1, t);
+        thump.frequency.exponentialRampToValueAtTime(0.35, t + 1.125);
+        thumpGain.gain.setValueAtTime(0.0, t);
+        thumpGain.gain.linearRampToValueAtTime(0.7, t + 0.375);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+        thump.start(t); thump.stop(t + 1.2);
+        // 4. Grit layer — hard-clipped bandpass noise, rough static texture
+        const gritLen = Math.floor(ac.sampleRate * 1.05);
+        const gritBuf = ac.createBuffer(1, gritLen, ac.sampleRate);
+        const gd = gritBuf.getChannelData(0);
+        for (let i = 0; i < gritLen; i++) gd[i] = Math.random() * 2 - 1;
+        const grit = ac.createBufferSource();
+        grit.buffer = gritBuf;
+        const gritBP = ac.createBiquadFilter();
+        gritBP.type = 'bandpass'; gritBP.Q.value = 0.4;
+        gritBP.frequency.setValueAtTime(8.5, t);
+        gritBP.frequency.exponentialRampToValueAtTime(2.1, t + 0.975);
+        const gritShaper = ac.createWaveShaper();
+        gritShaper.curve = gritCurve; gritShaper.oversample = '2x';
+        const gritGain = ac.createGain();
+        grit.connect(gritBP); gritBP.connect(gritShaper); gritShaper.connect(gritGain); gritGain.connect(ac.destination);
+        gritGain.gain.setValueAtTime(0.0, t);
+        gritGain.gain.linearRampToValueAtTime(1.4, t + 0.375);
+        gritGain.gain.exponentialRampToValueAtTime(0.001, t + 1.05);
+        grit.start(t);
+        // 5. Body whomp — wide bandpass noise sweep, adds the explosion's body
+        const whompLen = Math.floor(ac.sampleRate * 1.2);
+        const whompBuf = ac.createBuffer(1, whompLen, ac.sampleRate);
+        const wd = whompBuf.getChannelData(0);
+        for (let i = 0; i < whompLen; i++) wd[i] = Math.random() * 2 - 1;
+        const whomp = ac.createBufferSource();
+        whomp.buffer = whompBuf;
+        const whompBP = ac.createBiquadFilter();
+        whompBP.type = 'bandpass'; whompBP.Q.value = 0.6;
+        whompBP.frequency.setValueAtTime(7, t);
+        whompBP.frequency.exponentialRampToValueAtTime(1.4, t + 1.125);
+        const whompGain = ac.createGain();
+        whomp.connect(whompBP); whompBP.connect(whompGain); whompGain.connect(ac.destination);
+        whompGain.gain.setValueAtTime(0.0, t);
+        whompGain.gain.linearRampToValueAtTime(0.6, t + 0.375);
+        whompGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        whomp.start(t);
+        // 6. Deep rumble tail — very low lowpass
+        const tailDur = 0.075;
+        const tailLen = Math.floor(ac.sampleRate * tailDur);
+        const tailBuf = ac.createBuffer(1, tailLen, ac.sampleRate);
+        const td = tailBuf.getChannelData(0);
+        for (let i = 0; i < tailLen; i++) td[i] = Math.random() * 2 - 1;
+        const tail = ac.createBufferSource();
+        tail.buffer = tailBuf;
+        const tailLP = ac.createBiquadFilter();
+        tailLP.type = 'lowpass'; tailLP.frequency.value = 3;
+        const tailGain = ac.createGain();
+        tail.connect(tailLP); tailLP.connect(tailGain); tailGain.connect(ac.destination);
+        tailGain.gain.setValueAtTime(0.0, t);
+        tailGain.gain.linearRampToValueAtTime(0.18, t + 0.375);
+        tailGain.gain.exponentialRampToValueAtTime(0.001, t + 0.068);
+        tail.start(t); tail.stop(t + tailDur);
     }
 
     function playGatlingSound() {
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        const len = Math.floor(ac.sampleRate * 0.025);
+        // Low mechanical thump — body of the round firing
+        const thump = ac.createOscillator();
+        const tGain = ac.createGain();
+        thump.connect(tGain); tGain.connect(ac.destination);
+        thump.type = 'sine';
+        thump.frequency.setValueAtTime(90, t);
+        thump.frequency.exponentialRampToValueAtTime(28, t + 0.042);
+        tGain.gain.setValueAtTime(0.55, t);
+        tGain.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+        thump.start(t); thump.stop(t + 0.045);
+        // Sharp crack — highpass + bandpass noise burst
+        const len = Math.floor(ac.sampleRate * 0.028);
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const hp = ac.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 1800;
+        const bp = ac.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 1.2;
+        const gain = ac.createGain();
+        src.connect(hp); hp.connect(bp); bp.connect(gain); gain.connect(ac.destination);
+        gain.gain.setValueAtTime(0.32, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.028);
+        src.start(t);
+    }
+
+    function playBulletHitSound() {
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        // Descending bandpass noise sweep — the "thok" of impact
+        const len = Math.floor(ac.sampleRate * 0.055);
         const buf = ac.createBuffer(1, len, ac.sampleRate);
         const d = buf.getChannelData(0);
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
         const src = ac.createBufferSource();
         src.buffer = buf;
         const bp = ac.createBiquadFilter();
-        bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 2.5;
+        bp.type = 'bandpass'; bp.Q.value = 2.0;
+        bp.frequency.setValueAtTime(1400, t);
+        bp.frequency.exponentialRampToValueAtTime(180, t + 0.045);
         const gain = ac.createGain();
         src.connect(bp); bp.connect(gain); gain.connect(ac.destination);
-        gain.gain.setValueAtTime(0.45, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
         src.start(t);
+        // Low sine body — adds punch/weight
+        const osc = ac.createOscillator();
+        const oGain = ac.createGain();
+        osc.connect(oGain); oGain.connect(ac.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, t);
+        osc.frequency.exponentialRampToValueAtTime(55, t + 0.05);
+        oGain.gain.setValueAtTime(0.28, t);
+        oGain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+        osc.start(t); osc.stop(t + 0.055);
     }
 
     function playShotgunSound() {
@@ -219,8 +326,8 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Weapons: cost 0 = default (always owned), cooldown in ms
     const WEAPONS = {
-        laser:   { name: 'LASER',   desc: 'Single precision beam.',                cost: 0,   cooldown: 250  },
-        gatling: { name: 'GATLING', desc: 'Rapid kinetic rounds. High fire rate.',  cost: 350, cooldown: 65   },
+        gatling: { name: 'GATLING', desc: 'Rapid kinetic rounds. Hold to fire.',    cost: 0,   cooldown: 65   },
+        laser:   { name: 'LASER',   desc: 'Precision beam. One-shots any target.',  cost: 500, cooldown: 300  },
         shotgun: { name: 'SHOTGUN', desc: '6 pellets wide cone. Short range.',      cost: 300, cooldown: 500  },
         railgun: { name: 'RAILGUN', desc: 'Piercing slug. 2 damage per enemy hit.', cost: 500, cooldown: 800  },
         rocket:  { name: 'ROCKET',  desc: 'AOE blast. Large radius. Slow reload.',  cost: 600, cooldown: 1400 },
@@ -233,6 +340,10 @@ window.addEventListener('DOMContentLoaded', function() {
     let laserTrails = [];
     let bombEffects = [];
     let rocketTrails = [];
+    let gatlingBullets = [];
+    let shellCasings = [];
+    let muzzleFlashFrames = 0;
+    let muzzleFlashAngle = 0;
 
     let gameLoopInt = null;
     let spawnInt    = null;
@@ -262,7 +373,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Keys 1-5 switch active weapon (if owned)
     window.addEventListener('keydown', e => {
-        const map = { '1': 'laser', '2': 'gatling', '3': 'shotgun', '4': 'railgun', '5': 'rocket' };
+        const map = { '1': 'gatling', '2': 'laser', '3': 'shotgun', '4': 'railgun', '5': 'rocket' };
         const w = map[e.key];
         if (w && state.weapons && state.weapons.includes(w)) setWeapon(w);
     });
@@ -281,15 +392,16 @@ window.addEventListener('DOMContentLoaded', function() {
     function getEnemyHp() {
         const def = getLevelDef();
         const r = Math.random();
-        if (r < def.eliteChance) return 3;
-        if (r < def.eliteChance + def.toughChance) return 2;
-        return 1;
+        if (r < def.eliteChance) return 6;
+        if (r < def.eliteChance + def.toughChance) return 4;
+        return 3;
     }
 
     function getEnemyColor(hp) {
-        if (hp >= 3) return '#ff3333';
-        if (hp === 2) return '#ff8800';
-        return '#1bffc1';
+        if (hp >= 4) return '#cc44ff'; // elite: purple
+        if (hp >= 3) return '#ff3333'; // tough: red
+        if (hp === 2) return '#ff8800'; // normal: orange
+        return '#1bffc1';              // near-dead: teal
     }
 
     // --- Enemies ---
@@ -469,6 +581,94 @@ window.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function renderGatlingBullets() {
+        const remaining = [];
+        gatlingBullets.forEach(b => {
+            const prevProgress = b.progress;
+            b.progress += 0.05;
+            if (b.progress >= 1) return;
+            const px = b.x1 + (b.x2 - b.x1) * prevProgress;
+            const py = b.y1 + (b.y2 - b.y1) * prevProgress;
+            const cx = b.x1 + (b.x2 - b.x1) * b.progress;
+            const cy = b.y1 + (b.y2 - b.y1) * b.progress;
+            // Segment hit detection
+            let hit = false;
+            enemies = enemies.filter(e => {
+                if (!hit && rayHitsEnemy(e, px, py, cx, cy)) {
+                    hit = true; return hitEnemy(e, 0.75);
+                }
+                return true;
+            });
+            if (hit) return;
+            b.trail.unshift({ x: cx, y: cy });
+            if (b.trail.length > 7) b.trail.pop();
+            remaining.push(b);
+            // Draw: tapered gradient trail — wide+bright at tip, thin+transparent at tail
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 8;
+            const n = b.trail.length;
+            for (let i = 0; i < n - 1; i++) {
+                const t = i / (n - 1); // 0=newest, 1=oldest
+                ctx.globalAlpha = (1 - t) * 0.85;
+                ctx.lineWidth = Math.max(0.3, (1 - t) * 1.8);
+                ctx.strokeStyle = '#ffdd44';
+                ctx.beginPath();
+                ctx.moveTo(b.trail[i].x, b.trail[i].y);
+                ctx.lineTo(b.trail[i + 1].x, b.trail[i + 1].y);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 14;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        });
+        gatlingBullets = remaining;
+    }
+
+    function renderShellCasings() {
+        shellCasings = shellCasings.filter(s => s.alpha > 0);
+        shellCasings.forEach(s => {
+            s.x += s.vx; s.y += s.vy;
+            s.vx *= 0.84; s.vy *= 0.84;
+            s.angle += s.spin;
+            s.alpha -= 0.014;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, s.alpha);
+            ctx.fillStyle = '#ccaa33';
+            ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 3;
+            ctx.translate(s.x, s.y);
+            ctx.rotate(s.angle);
+            ctx.fillRect(-2, -0.7, 4, 1.4); // small elongated rectangle
+            ctx.restore();
+        });
+    }
+
+    function renderGatlingMuzzleFlash() {
+        if (muzzleFlashFrames <= 0) return;
+        const alpha = muzzleFlashFrames / 4;
+        muzzleFlashFrames--;
+        const bx = centerX + Math.cos(muzzleFlashAngle) * 26;
+        const by = centerY + Math.sin(muzzleFlashAngle) * 26;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = '#ffdd44'; ctx.shadowBlur = 22;
+        ctx.fillStyle = '#ffee88';
+        ctx.beginPath(); ctx.arc(bx, by, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ffcc44'; ctx.lineWidth = 1.5;
+        for (let i = 0; i < 4; i++) {
+            const a = muzzleFlashAngle + (Math.PI / 4) + (Math.PI / 2) * i;
+            ctx.beginPath();
+            ctx.moveTo(bx + Math.cos(a) * 6, by + Math.sin(a) * 6);
+            ctx.lineTo(bx + Math.cos(a) * 16, by + Math.sin(a) * 16);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
     // --- Particles ---
     function spawnExplosion(x, y) {
         playExplosionSound();
@@ -513,8 +713,22 @@ window.addEventListener('DOMContentLoaded', function() {
             spawnExplosion(e.x, e.y);
             return false;
         }
+        playBulletHitSound();
         e.hitTimer = 6; // flash white for 6 frames
         return true;
+    }
+
+    // Extend a ray from (x1,y1) through (tx,ty) to the canvas edge
+    function rayToEdge(x1, y1, tx, ty) {
+        const dx = tx - x1, dy = ty - y1;
+        if (dx === 0 && dy === 0) return { x: tx, y: ty };
+        const ts = [];
+        if (dx > 0) ts.push((canvasWidth  - x1) / dx);
+        else if (dx < 0) ts.push(-x1 / dx);
+        if (dy > 0) ts.push((canvasHeight - y1) / dy);
+        else if (dy < 0) ts.push(-y1 / dy);
+        const t = Math.min(...ts.filter(t => t > 0));
+        return { x: x1 + dx * t, y: y1 + dy * t };
     }
 
     // Point-to-line-segment distance check for ray hit detection
@@ -557,21 +771,30 @@ window.addEventListener('DOMContentLoaded', function() {
             let firstHit = false;
             enemies = enemies.filter(e => {
                 if (!firstHit && rayHitsEnemy(e, centerX, centerY, tx, ty)) {
-                    firstHit = true; return hitEnemy(e);
+                    firstHit = true; return hitEnemy(e, 99); // one-shots any target
                 }
                 return true;
             });
 
         } else if (w === 'gatling') {
             playGatlingSound();
-            laserTrails.push({ x1: centerX, y1: centerY, x2: tx, y2: ty, alpha: 1, type: 'bullet' });
-            let firstHit = false;
-            enemies = enemies.filter(e => {
-                if (!firstHit && rayHitsEnemy(e, centerX, centerY, tx, ty)) {
-                    firstHit = true; return hitEnemy(e);
-                }
-                return true;
+            muzzleFlashAngle = Math.atan2(ty - centerY, tx - centerX);
+            muzzleFlashFrames = 4;
+            const edge = rayToEdge(centerX, centerY, tx, ty);
+            gatlingBullets.push({ x1: centerX, y1: centerY, x2: edge.x, y2: edge.y, progress: 0, trail: [] });
+            // Eject shell casing — top-down, scatter around turret
+            const casingAngle = muzzleFlashAngle - Math.PI / 2 + (Math.random() - 0.5) * 1.4;
+            const casingSpeed = 2.5 + Math.random() * 2.5;
+            shellCasings.push({
+                x: centerX + Math.cos(casingAngle) * 8,
+                y: centerY + Math.sin(casingAngle) * 8,
+                vx: Math.cos(casingAngle) * casingSpeed,
+                vy: Math.sin(casingAngle) * casingSpeed,
+                angle: casingAngle,
+                spin: (Math.random() - 0.5) * 0.3,
+                alpha: 1,
             });
+            // Hit detection happens per-frame as bullet travels
 
         } else if (w === 'shotgun') {
             playShotgunSound();
@@ -729,6 +952,9 @@ window.addEventListener('DOMContentLoaded', function() {
         renderEnemies();
         renderLaserTrails();
         renderRocketTrails();
+        renderGatlingBullets();
+        renderShellCasings();
+        renderGatlingMuzzleFlash();
         renderBombEffects();
         renderParticles();
         if (mouseIsDown && state.activeWeapon === 'gatling') fireAction();
@@ -768,16 +994,16 @@ window.addEventListener('DOMContentLoaded', function() {
             levelKills: 0,
             kills: 0,
             credits: 0,
-            weapons: ['laser'],
-            activeWeapon: 'laser',
-            fireCooldown: WEAPONS.laser.cooldown,
+            weapons: ['gatling'],
+            activeWeapon: 'gatling',
+            fireCooldown: WEAPONS.gatling.cooldown,
             lastFired: 0,
         };
-        enemies = []; particles = []; laserTrails = []; bombEffects = []; rocketTrails = [];
+        enemies = []; particles = []; laserTrails = []; bombEffects = []; rocketTrails = []; gatlingBullets = []; shellCasings = [];
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
         creditsDisplay.textContent = '0';
-        weaponDisplay.textContent = 'LASER';
+        weaponDisplay.textContent = 'GATLING';
         levelDisplay.textContent = '1';
         healthBar.style.width = '100%';
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
