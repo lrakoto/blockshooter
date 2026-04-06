@@ -267,6 +267,115 @@ button{
     white-space: nowrap;
 }
 
-#credits, #activeweapon, #levelnum {
+#activeweapon, #levelnum {
     color: #1bffc1;
 }
+
+/* Heat bar in topbar */
+#heatwrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#heatbar-outer {
+    width: 60px;
+    height: 5px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+    overflow: hidden;
+}
+#heatbar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ffcc00, #ff4400);
+    border-radius: 3px;
+    transition: background 0.1s;
+}
+
+/* Streak display */
+#streak-display {
+    position: absolute;
+    top: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffcc00;
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 900;
+    font-size: 1.6em;
+    letter-spacing: 6px;
+    text-shadow: 0 0 18px rgba(255,200,0,0.8);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 3;
+}
+#streak-display.visible {
+    opacity: 1;
+}
+
+/* Controls legend */
+#controls-legend {
+    display: none;
+    position: fixed;
+    bottom: 60px;
+    left: 16px;
+    background: rgba(0,0,0,0.72);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 10px 12px 10px 12px;
+    z-index: 10;
+    min-width: 160px;
+}
+#controls-toggle {
+    position: absolute;
+    top: 5px;
+    right: 7px;
+    padding: 0;
+    width: 18px;
+    height: 18px;
+    font-size: 0.75em;
+    letter-spacing: 0;
+    line-height: 18px;
+    text-align: center;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    border-radius: 3px;
+}
+#controls-toggle:hover { background: rgba(255,255,255,0.2); }
+#controls-content { margin-top: 4px; }
+.ctrl-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 5px;
+    font-size: 0.58em;
+    letter-spacing: 1px;
+}
+.ctrl-key {
+    color: #1bffc1;
+    font-weight: 700;
+}
+.ctrl-desc {
+    color: rgba(255,255,255,0.55);
+    text-align: right;
+}
+
+/* Controls open button (shown when legend is hidden) */
+#controls-open {
+    display: none;
+    position: fixed;
+    bottom: 60px;
+    left: 16px;
+    padding: 6px 10px;
+    font-size: 0.5em;
+    letter-spacing: 2px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    z-index: 10;
+}
+#controls-open:hover { color: #fff; }

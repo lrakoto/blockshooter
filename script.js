@@ -25,9 +25,15 @@ window.addEventListener('DOMContentLoaded', function() {
     const levelDisplay   = document.querySelector('#levelnum');
     const levelHeading   = document.querySelector('#levelheading');
     const levelDesc      = document.querySelector('#leveldesc');
-    const shopCredits    = document.querySelector('#shopcredits');
-    const weaponShop     = document.querySelector('#weaponshop');
-    const ctx            = gameCanvas.getContext('2d');
+    const shopCredits      = document.querySelector('#shopcredits');
+    const weaponShop       = document.querySelector('#weaponshop');
+    const titleEl          = document.querySelector('#gametitle');
+    const heatBar          = document.querySelector('#heatbar');
+    const streakDisplay    = document.querySelector('#streak-display');
+    const controlsLegend   = document.querySelector('#controls-legend');
+    const controlsOpen     = document.querySelector('#controls-open');
+    const controlsToggle   = document.querySelector('#controls-toggle');
+    const ctx              = gameCanvas.getContext('2d');
 
     // --- Audio ---
     let audioCtx = null;
@@ -391,6 +397,21 @@ window.addEventListener('DOMContentLoaded', function() {
         return '#1bffc1';              // near-dead: teal
     }
 
+    // --- Screen Shake ---
+    function shakeCanvas(intensity) {
+        const dur = 220;
+        const start = Date.now();
+        const tick = () => {
+            const decay = 1 - (Date.now() - start) / dur;
+            if (decay <= 0) { gameCanvas.style.transform = ''; return; }
+            const x = (Math.random() - 0.5) * intensity * decay;
+            const y = (Math.random() - 0.5) * intensity * decay;
+            gameCanvas.style.transform = `translate(${x}px,${y}px)`;
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }
+
     // --- Enemies ---
     function spawnEnemy() {
         let x, y;
@@ -414,7 +435,9 @@ window.addEventListener('DOMContentLoaded', function() {
         enemies.forEach(e => {
             if (e.hitTimer > 0) e.hitTimer--;
             // Flash white on hit, otherwise color by HP
-            ctx.fillStyle = e.hitTimer > 0 ? '#ffffff' : getEnemyColor(e.hp);
+            const ratio = e.hp / e.maxHp;
+            const flashColor = ratio > 0.66 ? '#ff8844' : ratio > 0.33 ? '#ffee44' : '#aaffee';
+            ctx.fillStyle = e.hitTimer > 0 ? flashColor : getEnemyColor(e.hp);
             ctx.fillRect(e.x - 7, e.y - 7, 11, 11);
             // HP bar above multi-HP enemies
             if (e.maxHp > 1) {
@@ -607,6 +630,7 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Particles ---
     function spawnExplosion(x, y) {
         playExplosionSound();
+        shakeCanvas(7);
         const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5', '#ff4444'];
         for (let i = 0; i < 22; i++) {
             const angle = (Math.PI * 2 / 22) * i + (Math.random() - 0.5) * 0.8;
@@ -643,7 +667,10 @@ window.addEventListener('DOMContentLoaded', function() {
         if (e.hp <= 0) {
             state.levelKills++;
             state.kills++;
-            addScore(e.maxHp * 100);
+            state.streak++;
+            state.streakFrames = 90;
+            const multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
+            addScore(Math.round(e.maxHp * 100 * multiplier));
             spawnExplosion(e.x, e.y);
             return false;
         }
@@ -678,9 +705,12 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Fire ---
     function fireAction() {
         if (!state.fireCooldown) return;
+        if (state.jammed) return;
         const now = Date.now();
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
+        state.heat = Math.min(100, state.heat + 7);
+        if (state.heat >= 100) { state.jammed = true; state.jamFrames = 80; }
 
         const tx = cursorPosX, ty = cursorPosY;
 
@@ -818,6 +848,30 @@ window.addEventListener('DOMContentLoaded', function() {
         hitDetect();
         checkLevelUp();
 
+        // Overheat: cool down, handle jam
+        if (state.jammed) {
+            state.jamFrames--;
+            if (state.jamFrames <= 0) { state.jammed = false; state.heat = 20; }
+        } else {
+            state.heat = Math.max(0, state.heat - 1.2);
+        }
+        heatBar.style.width = state.heat + '%';
+        heatBar.style.background = state.jammed
+            ? '#ff2200'
+            : `linear-gradient(90deg, #ffcc00, ${state.heat > 70 ? '#ff4400' : '#ffaa00'})`;
+
+        // Kill streak display
+        if (state.streakFrames > 0) {
+            state.streakFrames--;
+            if (state.streak >= 3) {
+                streakDisplay.textContent = `STREAK ×${state.streak}`;
+                streakDisplay.classList.add('visible');
+            }
+        } else {
+            state.streak = 0;
+            streakDisplay.classList.remove('visible');
+        }
+
         if (state.health <= 0 && state.lives > 0) {
             state.lives--;
             livesText.textContent = state.lives;
@@ -833,11 +887,17 @@ window.addEventListener('DOMContentLoaded', function() {
         bottomBar.style.display = 'flex';
         topBar.style.display = 'flex';
         healthText.style.display = 'inline-block';
+        titleEl.style.display = 'none';
+        controlsLegend.style.display = 'block';
+        controlsOpen.style.display = 'none';
     }
     function hideGame() {
         bottomBar.style.display = 'none';
         topBar.style.display = 'none';
         healthText.style.display = 'none';
+        titleEl.style.display = '';
+        controlsLegend.style.display = 'none';
+        controlsOpen.style.display = 'none';
     }
 
     // --- Reset ---
@@ -854,6 +914,11 @@ window.addEventListener('DOMContentLoaded', function() {
             bulletDamage: GATLING_BASE.damage,
             spread: GATLING_BASE.spread,
             lastFired: 0,
+            heat: 0,
+            jammed: false,
+            jamFrames: 0,
+            streak: 0,
+            streakFrames: 0,
         };
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
         scoreBoard.textContent = '0';
@@ -861,6 +926,8 @@ window.addEventListener('DOMContentLoaded', function() {
         weaponDisplay.textContent = 'GATLING';
         levelDisplay.textContent = '1';
         healthBar.style.width = '100%';
+        heatBar.style.width = '0%';
+        streakDisplay.classList.remove('visible');
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     }
 
@@ -910,6 +977,15 @@ window.addEventListener('DOMContentLoaded', function() {
     resetLose.addEventListener('click', function() {
         loseMenu.style.display = 'none';
         showGame(); defaults(); startIntervals();
+    });
+
+    controlsToggle.addEventListener('click', () => {
+        controlsLegend.style.display = 'none';
+        controlsOpen.style.display = 'block';
+    });
+    controlsOpen.addEventListener('click', () => {
+        controlsOpen.style.display = 'none';
+        controlsLegend.style.display = 'block';
     });
 
     // --- End States ---

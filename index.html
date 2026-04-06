@@ -12,7 +12,7 @@
 </head>
 <body>
     <main>
-        <h1>Block Shooter</h1>
+        <h1 id="gametitle">Block Shooter</h1>
         <section id="winmenu">
             <div class="innerwrap bord">
                 <div>
@@ -38,10 +38,10 @@
                 <div class="cubeimg"></div>
                 <div style="overflow:auto">
                     <h4>Welcome Cadet!</h4>
-                    <p>Evil blocks have invaded this quadrant. Eliminate them all across 5 escalating levels. Clear enough kills to advance — but spend your credits wisely in the upgrade shop between waves.</p>
-                    <p>Orange blocks take 2 hits. Red elite blocks take 3. Harder enemies are worth more credits.</p>
+                    <p>Evil blocks have invaded this quadrant. Eliminate them all across 5 escalating levels. Between waves, choose one of three upgrades: accuracy, damage, or fire rate.</p>
+                    <p>Teal blocks take 4 hits. Red elites take 6. Watch your heat — overfiring jams your Gatling.</p>
                     <h4>Controls</h4>
-                    <p>Aim with mouse, left click to fire. Keys 1–5 switch weapons during battle.</p>
+                    <p>Aim with mouse. Click or hold to fire.</p>
                     <button id="startbutton">Deploy</button>
                 </div>
             </div>
@@ -59,11 +59,12 @@
         </section>
         <section id="topbar">
             <div class="score-wrap bord">SCORE: <span id="score">0</span></div>
-            <div class="hud-wrap bord">CR: <span id="credits">0</span></div>
-            <div class="hud-wrap bord">WPN: <span id="activeweapon">LASER</span></div>
+            <div class="hud-wrap bord">WPN: <span id="activeweapon">GATLING</span></div>
+            <div class="hud-wrap bord" id="heatwrap">HEAT <div id="heatbar-outer"><div id="heatbar"></div></div></div>
             <div class="hud-wrap bord">LV <span id="levelnum">1</span></div>
             <div class="lives-wrap bord"><span id="lives">3</span> LIVES</div>
         </section>
+        <div id="streak-display"></div>
         <img src="./images/turret.webp" alt="turret" id="turret" style="display: none;">
         <canvas id="gamecanvas">
             <!--GAME GOES HERE-->
@@ -72,6 +73,16 @@
         <section id="bottombar">
             <div class="health-wrap" id="health"></div>
         </section>
+        <button id="controls-open">? CONTROLS</button>
+        <div id="controls-legend">
+            <button id="controls-toggle">×</button>
+            <div id="controls-content">
+                <div class="ctrl-row"><span class="ctrl-key">MOUSE</span><span class="ctrl-desc">Aim</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">CLICK</span><span class="ctrl-desc">Fire</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">HOLD</span><span class="ctrl-desc">Auto-fire</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">HEAT</span><span class="ctrl-desc">Don't overheat!</span></div>
+            </div>
+        </div>
     </main>
 <script src="./script.js"></script>
 </body>
