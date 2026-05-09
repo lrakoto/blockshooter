@@ -395,10 +395,9 @@ window.addEventListener('DOMContentLoaded', function() {
     const MINI_TURRET_HP       = 20;
     const CRATE_HP             = 16;
 
-    const WAVE_RANGE      = 380;
+    const WAVE_RANGE      = 240;   // base — upgradeable via state.waveRange
     const WAVE_PUSH       = 32;
     const WAVE_COOLDOWN   = 12000; // ms
-    const WAVE_CONE       = Math.PI * 0.55; // ~99° total arc
 
     const SHOTGUN_TURRET_MAX    = 4;
     const SHOTGUN_SLOT_OFFSET   = 95;
@@ -438,11 +437,14 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
-        { key: 'accuracy', name: 'ACCURACY',  baseCost: 40,  costStep: 20, desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',   name: 'DAMAGE',    baseCost: 55,  costStep: 30, desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
-        { key: 'firerate', name: 'FIRE RATE', baseCost: 45,  costStep: 25, desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
-        { key: 'heatsink', name: 'HEAT SINK', baseCost: 40,  costStep: 20, desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
-        { key: 'caliber',  name: 'CALIBER',   baseCost: 60,  costStep: 30, desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
+        { key: 'accuracy',  name: 'ACCURACY',    baseCost: 80,  costStep: 45,  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',    name: 'DAMAGE',       baseCost: 110, costStep: 60,  desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
+        { key: 'firerate',  name: 'FIRE RATE',    baseCost: 90,  costStep: 50,  desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'heatsink',  name: 'HEAT SINK',    baseCost: 80,  costStep: 40,  desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
+        { key: 'caliber',   name: 'CALIBER',      baseCost: 120, costStep: 65,  desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
+        { key: 'speed',     name: 'SPEED',        baseCost: 70,  costStep: 45,  desc: 'Move faster. +0.5 movement speed.',                  apply: s => { s.playerSpeed   = Math.min(8, (s.playerSpeed || PLAYER_SPEED) + 0.5); } },
+        { key: 'wavedmg',   name: 'WAVE POWER',   baseCost: 90,  costStep: 55,  desc: 'Wave strips HP from enemies hit. +1 damage.',        apply: s => { s.waveDamage    = (s.waveDamage || 1) + 1; } },
+        { key: 'waverange', name: 'WAVE RANGE',   baseCost: 75,  costStep: 45,  desc: 'Wider blast radius. +50px wave range.',              apply: s => { s.waveRange     = (s.waveRange  || WAVE_RANGE) + 50; } },
     ];
 
     // --- Game State ---
@@ -459,6 +461,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let upgradeCrates     = [];
     let circleHitFlashes  = [];
     let waveRings         = [];
+    let enemyBullets      = [];
 
     let gameLoopInt = null;
     let spawnInt    = null;
@@ -638,20 +641,26 @@ window.addEventListener('DOMContentLoaded', function() {
             x = playerX + Math.cos(angle) * dist;
             y = playerY + Math.sin(angle) * dist;
         } while (Math.hypot(x - playerX, y - playerY) < 280);
-        const hp = getEnemyHp();
         let behavior = 'normal';
-        const br       = Math.random();
-        const zipChance = Math.min(0.18, state.level * 0.04);
-        const zigChance = Math.min(0.18, state.level * 0.045);
-        if      (br < zipChance)             behavior = 'zipper';
-        else if (br < zipChance + zigChance) behavior = 'zigzag';
-        const size = behavior === 'zigzag' ? 14 : 10;
+        const br        = Math.random();
+        const tankChance = Math.min(0.07, (state.level - 2) * 0.012);
+        const zipChance  = Math.min(0.18, state.level * 0.04);
+        const zigChance  = Math.min(0.18, state.level * 0.045);
+        if      (br < tankChance)                        behavior = 'tank';
+        else if (br < tankChance + zipChance)            behavior = 'zipper';
+        else if (br < tankChance + zipChance + zigChance) behavior = 'zigzag';
+        const hp = behavior === 'tank'
+            ? 10 + Math.floor(state.level / 2)
+            : getEnemyHp();
+        const size = behavior === 'zigzag' ? 18
+                   : behavior === 'tank'   ? 18 : 10;
         enemies.push({
             x, y, hp, maxHp: hp, hitTimer: 0,
             behavior, size,
             zigzagPhase: Math.random() * Math.PI * 2,
             zipping: false, zipDuration: 0,
             zipCooldown: Math.floor(Math.random() * 25),
+            fireTick: Math.floor(Math.random() * 90),
         });
     }
 
@@ -683,6 +692,22 @@ window.addEventListener('DOMContentLoaded', function() {
                 }
                 e.x += Math.cos(angle) * speed;
                 e.y += Math.sin(angle) * speed;
+            } else if (e.behavior === 'tank') {
+                // Slow, heavy — 35% of normal speed
+                e.x += Math.cos(angle) * speed * 0.35;
+                e.y += Math.sin(angle) * speed * 0.35;
+                // Fire at player every ~3 seconds (moveEnemies runs at 20ms, so 150 ticks)
+                e.fireTick = (e.fireTick || 0) + 1;
+                if (e.fireTick >= 150) {
+                    e.fireTick = 0;
+                    const bAngle = Math.atan2(playerY - e.y, playerX - e.x);
+                    const spread = (Math.random() - 0.5) * 0.3;
+                    enemyBullets.push({
+                        x: e.x, y: e.y,
+                        vx: Math.cos(bAngle + spread) * 2.2,
+                        vy: Math.sin(bAngle + spread) * 2.2,
+                    });
+                }
             } else {
                 e.x += Math.cos(angle) * speed;
                 e.y += Math.sin(angle) * speed;
@@ -699,13 +724,17 @@ window.addEventListener('DOMContentLoaded', function() {
         if (now - state.waveLastUsed < WAVE_COOLDOWN) return;
         state.waveLastUsed = now;
         shakeCanvas(8);
+        const wRange = state.waveRange || WAVE_RANGE;
         enemies.forEach(e => {
             const dx = e.x - playerX, dy = e.y - playerY;
             const dist = Math.hypot(dx, dy) || 1;
-            if (dist >= WAVE_RANGE) return;
-            const force = WAVE_PUSH * (1 - dist / WAVE_RANGE);
+            if (dist >= wRange) return;
+            const force = WAVE_PUSH * (1 - dist / wRange);
             e.pushVx = (dx / dist) * force;
             e.pushVy = (dy / dist) * force;
+            // Non-lethal damage — always leaves at least 1 HP
+            e.hp = Math.max(1, e.hp - (state.waveDamage || 1));
+            e.hitTimer = 8;
         });
         for (let i = 0; i < 3; i++) {
             waveRings.push({ x: playerX, y: playerY, r: 18 + i * 28, life: 24, maxLife: 24, delay: i * 4 });
@@ -717,7 +746,8 @@ window.addEventListener('DOMContentLoaded', function() {
             if (e.hitTimer > 0) e.hitTimer--;
             const ratio      = e.hp / e.maxHp;
             const flashColor = ratio > 0.66 ? '#ff8844' : ratio > 0.33 ? '#ffee44' : '#aaffee';
-            const col        = e.hitTimer > 0 ? flashColor : getEnemyColor(e.hp);
+            const baseCol    = e.behavior === 'tank' ? '#cc3300' : getEnemyColor(e.hp);
+            const col        = e.hitTimer > 0 ? flashColor : baseCol;
 
             // Sample trail every 3rd render frame
             e.trailTick = ((e.trailTick || 0) + 1);
@@ -761,7 +791,7 @@ window.addEventListener('DOMContentLoaded', function() {
             if (e.behavior === 'zigzag') {
                 // Wireframe pyramid — bigger, easier to track visually
                 ctx.shadowColor = '#00ffaa'; ctx.shadowBlur = 20;
-                const pw = 14, ph = 13, pd = 5;
+                const pw = 20, ph = 18, pd = 7;
                 const ax = e.x,           ay = e.y - ph / 2;
                 const blx = e.x - pw / 2, bly = e.y + ph / 2;
                 const brx = e.x + pw / 2, bry = e.y + ph / 2;
@@ -791,6 +821,28 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.fillStyle = sGrad;
                 ctx.fill();
                 ctx.lineWidth = 0.9;
+                ctx.stroke();
+
+            } else if (e.behavior === 'tank') {
+                // Large heavy cube — wider, bolder, dark red glow
+                ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 20;
+                const w = 22, h = 18, d = 8;
+                const fx = e.x - w / 2, fy = e.y - h / 2;
+                ctx.lineWidth = 1.8;
+                ctx.strokeRect(fx, fy, w, h);
+                ctx.beginPath();
+                ctx.moveTo(fx,         fy);     ctx.lineTo(fx + d,     fy - d);
+                ctx.moveTo(fx + w,     fy);     ctx.lineTo(fx + w + d, fy - d);
+                ctx.moveTo(fx + d,     fy - d); ctx.lineTo(fx + w + d, fy - d);
+                ctx.moveTo(fx + w,     fy + h); ctx.lineTo(fx + w + d, fy + h - d);
+                ctx.moveTo(fx + w + d, fy - d); ctx.lineTo(fx + w + d, fy + h - d);
+                ctx.stroke();
+                // Barrel — small protrusion aimed at player
+                const bAng = Math.atan2(playerY - e.y, playerX - e.x);
+                ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(e.x, e.y);
+                ctx.lineTo(e.x + Math.cos(bAng) * 14, e.y + Math.sin(bAng) * 14);
                 ctx.stroke();
 
             } else {
@@ -1168,6 +1220,23 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.fillRect(t.x - bw / 2, t.y + 13, bw, bh);
             ctx.fillStyle = hpR > 0.5 ? '#ff8833' : '#cc4400';
             ctx.fillRect(t.x - bw / 2, t.y + 13, bw * hpR, bh);
+        });
+    }
+
+    // --- Enemy Bullets ---
+    function renderEnemyBullets() {
+        enemyBullets = enemyBullets.filter(b => {
+            b.x += b.vx; b.y += b.vy;
+            // Remove if too far from player
+            if (Math.hypot(b.x - playerX, b.y - playerY) > 700) return false;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4400';
+            ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 10;
+            ctx.fill();
+            ctx.restore();
+            return true;
         });
     }
 
@@ -1775,15 +1844,29 @@ function spawnExplosion(x, y) {
             }
             return true;
         });
+
+        // Enemy bullet hits
+        enemyBullets = enemyBullets.filter(b => {
+            if (Math.hypot(b.x - playerX, b.y - playerY) < 72) {
+                takeHealth();
+                playBoundaryHitSound();
+                const hitAngle = Math.atan2(b.y - playerY, b.x - playerX);
+                circleHitFlashes.push({ angle: hitAngle, life: 14 });
+                return false;
+            }
+            return true;
+        });
     }
 
     function takeHealth() {
-        // Beyond base levels enemies deal more damage per hit, capped at 20%
         const bonus = state.level > LEVELS.length
             ? Math.min(15, (state.level - LEVELS.length) * 1.5)
             : 0;
         state.health = Math.max(0, state.health - (5 + bonus));
         healthBar.style.width = `${state.health}%`;
+        // Splash: all deployed turrets take 3 damage
+        miniTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
+        flameTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
     }
 
     // --- Level Up ---
@@ -1812,9 +1895,9 @@ function spawnExplosion(x, y) {
     }
 
     const TURRET_UPGRADES = [
-        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 65, costStep: 35, desc: 'All turrets deal +50% damage.',                        apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
-        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 55, costStep: 28, desc: 'All turrets fire 30% faster.',                         apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
-        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 50, costStep: 25, desc: 'All turrets gain +20 max HP and are fully repaired.',   apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
+        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 130, costStep: 70, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
+        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 110, costStep: 55, desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
+        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 100, costStep: 50, desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
     ];
 
     function getUpgradeCost(u) {
@@ -1897,10 +1980,11 @@ function spawnExplosion(x, y) {
     // --- Game Loop ---
     function updatePlayerPosition() {
         let dx = 0, dy = 0;
-        if (keysHeld.w) dy -= PLAYER_SPEED;
-        if (keysHeld.s) dy += PLAYER_SPEED;
-        if (keysHeld.a) dx -= PLAYER_SPEED;
-        if (keysHeld.d) dx += PLAYER_SPEED;
+        const spd = state.playerSpeed || PLAYER_SPEED;
+        if (keysHeld.w) dy -= spd;
+        if (keysHeld.s) dy += spd;
+        if (keysHeld.a) dx -= spd;
+        if (keysHeld.d) dx += spd;
         if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
         playerX += dx;
         playerY += dy;
@@ -1963,6 +2047,7 @@ function spawnExplosion(x, y) {
         renderMiniTurrets();
         renderFlameTurrets();
         renderShellCasings();
+        renderEnemyBullets();
         renderWaveRings();
         renderGatlingMuzzleFlash();
         renderParticles();
@@ -2055,6 +2140,9 @@ function spawnExplosion(x, y) {
             waveWasReady: true,
             invincFrames: 0,
             bulletRadius: 0,
+            waveRange: WAVE_RANGE,
+            waveDamage: 1,
+            playerSpeed: PLAYER_SPEED,
             credits: 80,
             upgradeCounts: {},
             jamWindowAngle: Math.PI,
@@ -2065,7 +2153,7 @@ function spawnExplosion(x, y) {
         playerX = centerX; playerY = centerY;
         keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
-        miniTurrets = []; flameTurrets = []; upgradeCrates = []; circleHitFlashes = []; waveRings = [];
+        miniTurrets = []; flameTurrets = []; upgradeCrates = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
