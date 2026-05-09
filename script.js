@@ -438,11 +438,11 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
-        { key: 'accuracy',   name: 'ACCURACY',    desc: 'Tighter grouping. Reduces bullet spread.',             apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',     name: 'DAMAGE',      desc: 'Harder hitting rounds. +0.5 damage per bullet.',       apply: s => { s.bulletDamage += 0.5; } },
-        { key: 'firerate',   name: 'FIRE RATE',   desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',        apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
-        { key: 'heatsink',   name: 'HEAT SINK',   desc: 'Better thermal venting. Cuts jam duration by 20%.',    apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
-        { key: 'caliber',    name: 'CALIBER',     desc: 'Wider rounds. Each bullet has +3px hit radius.',       apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
+        { key: 'accuracy', name: 'ACCURACY',  baseCost: 40,  costStep: 20, desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',   name: 'DAMAGE',    baseCost: 55,  costStep: 30, desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
+        { key: 'firerate', name: 'FIRE RATE', baseCost: 45,  costStep: 25, desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'heatsink', name: 'HEAT SINK', baseCost: 40,  costStep: 20, desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
+        { key: 'caliber',  name: 'CALIBER',   baseCost: 60,  costStep: 30, desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
     ];
 
     // --- Game State ---
@@ -637,7 +637,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const dist  = 180 + Math.random() * spawnR;
             x = playerX + Math.cos(angle) * dist;
             y = playerY + Math.sin(angle) * dist;
-        } while (Math.hypot(x - playerX, y - playerY) < 160);
+        } while (Math.hypot(x - playerX, y - playerY) < 280);
         const hp = getEnemyHp();
         let behavior = 'normal';
         const br       = Math.random();
@@ -1148,16 +1148,16 @@ window.addEventListener('DOMContentLoaded', function() {
                         : ctx.lineTo(Math.cos(a) * 9, Math.sin(a) * 9);
             }
             ctx.closePath();
-            ctx.fillStyle   = 'rgba(40,30,70,0.50)';
-            ctx.shadowColor = 'rgba(180,100,255,0.7)';
+            ctx.fillStyle   = 'rgba(70,35,10,0.50)';
+            ctx.shadowColor = 'rgba(255,140,40,0.7)';
             ctx.shadowBlur  = 10;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(190,120,255,0.75)';
+            ctx.strokeStyle = 'rgba(255,160,60,0.75)';
             ctx.lineWidth   = 1;
             ctx.stroke();
             // Double barrel
-            ctx.fillStyle   = '#cc88ff';
-            ctx.shadowColor = '#aa44ff'; ctx.shadowBlur = 5;
+            ctx.fillStyle   = '#ff9933';
+            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 5;
             ctx.beginPath(); ctx.roundRect(1, -4,   10, 2.5, 1); ctx.fill();
             ctx.beginPath(); ctx.roundRect(1,  1.5, 10, 2.5, 1); ctx.fill();
             ctx.restore();
@@ -1166,7 +1166,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const bw = 22, bh = 1.5, hpR = t.hp / t.maxHp;
             ctx.fillStyle = '#222';
             ctx.fillRect(t.x - bw / 2, t.y + 13, bw, bh);
-            ctx.fillStyle = hpR > 0.5 ? '#bb77ff' : '#7700cc';
+            ctx.fillStyle = hpR > 0.5 ? '#ff8833' : '#cc4400';
             ctx.fillRect(t.x - bw / 2, t.y + 13, bw * hpR, bh);
         });
     }
@@ -1650,6 +1650,7 @@ function spawnExplosion(x, y) {
             state.streakFrames = 90;
             const multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
             addScore(Math.round(e.maxHp * 100 * multiplier));
+            state.credits += 8 + (e.maxHp - 3) * 5; // 8 / 13 / 23+ per kill
             spawnExplosion(e.x, e.y);
             return false;
         }
@@ -1791,6 +1792,7 @@ function spawnExplosion(x, y) {
         if (state.levelKills < def.killsToNext) return;
         clearAllIntervals();
         enemies = [];
+        state.credits += 50 + state.level * 10; // level completion bonus
         state.level++;
         state.levelKills = 0;
         levelDisplay.textContent = state.level;
@@ -1810,37 +1812,72 @@ function spawnExplosion(x, y) {
     }
 
     const TURRET_UPGRADES = [
-        { key: 'tdmg',   name: 'TURRET DMG',      desc: 'All turrets deal +50% damage.',                        apply: () => { miniTurrets.forEach(t => { t.damage   = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); } },
-        { key: 'trate',  name: 'TURRET FIRE RATE', desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
-        { key: 'thp',    name: 'TURRET ARMOR',     desc: 'All turrets gain +20 max HP and are fully repaired.', apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
+        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 65, costStep: 35, desc: 'All turrets deal +50% damage.',                        apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
+        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 55, costStep: 28, desc: 'All turrets fire 30% faster.',                         apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
+        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 50, costStep: 25, desc: 'All turrets gain +20 max HP and are fully repaired.',   apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
     ];
 
-    function makeCard(name, desc, onSelect) {
+    function getUpgradeCost(u) {
+        const count = state.upgradeCounts[u.key] || 0;
+        return u.baseCost + count * u.costStep;
+    }
+
+    function makeUpgradeCard(u, applyFn) {
         const card = document.createElement('div');
         card.className = 'weapon-card';
+
         const nameEl = document.createElement('div');
-        nameEl.className = 'weapon-name'; nameEl.textContent = name;
+        nameEl.className = 'weapon-name'; nameEl.textContent = u.name;
+
         const descEl = document.createElement('div');
-        descEl.className = 'weapon-desc'; descEl.textContent = desc;
+        descEl.className = 'weapon-desc'; descEl.textContent = u.desc;
+
+        const costEl = document.createElement('div');
+        costEl.className = 'weapon-desc';
+        costEl.style.cssText = 'color:#1bffc1; font-weight:700; margin-bottom:6px;';
+
         const actionEl = document.createElement('div');
         actionEl.className = 'weapon-action';
         const btn = document.createElement('button');
-        btn.textContent = 'SELECT';
-        btn.onclick = onSelect;
+
+        function refresh() {
+            const cost = getUpgradeCost(u);
+            const affordable = state.credits >= cost;
+            costEl.textContent = `${cost} CR`;
+            btn.textContent    = 'BUY';
+            btn.disabled       = !affordable;
+            card.classList.toggle('active-weapon', affordable);
+        }
+
+        btn.onclick = () => {
+            const cost = getUpgradeCost(u);
+            if (state.credits < cost) return;
+            state.credits -= cost;
+            state.upgradeCounts[u.key] = (state.upgradeCounts[u.key] || 0) + 1;
+            applyFn();
+            populateUpgrades(); // re-render with updated credits + costs
+        };
+
         actionEl.appendChild(btn);
-        card.appendChild(nameEl); card.appendChild(descEl); card.appendChild(actionEl);
+        card.appendChild(nameEl); card.appendChild(descEl);
+        card.appendChild(costEl); card.appendChild(actionEl);
+        refresh();
         return card;
     }
 
     function populateUpgrades() {
         weaponShop.innerHTML = '';
 
+        // Credits header
+        const header = document.createElement('p');
+        header.className = 'shop-credits-line';
+        header.style.cssText = 'grid-column:1/-1; margin-bottom:12px;';
+        header.innerHTML = `CREDITS: <span style="color:#1bffc1; font-size:1.1em;">${state.credits}</span>`;
+        weaponShop.appendChild(header);
+
         // Player upgrades
         UPGRADES.forEach(u => {
-            weaponShop.appendChild(makeCard(u.name, u.desc, () => {
-                u.apply(state);
-                hideLevelUpScreen(); showGame(); startIntervals();
-            }));
+            weaponShop.appendChild(makeUpgradeCard(u, () => u.apply(state)));
         });
 
         // Turret upgrades — separate section if any turrets deployed
@@ -1851,20 +1888,22 @@ function spawnExplosion(x, y) {
             sep.style.cssText = 'margin-top:20px; grid-column:1/-1; width:100%; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;';
             sep.textContent = 'TURRET UPGRADES';
             weaponShop.appendChild(sep);
-
             TURRET_UPGRADES.forEach(u => {
-                weaponShop.appendChild(makeCard(u.name, u.desc, () => {
-                    u.apply();
-                    hideLevelUpScreen(); showGame(); startIntervals();
-                }));
+                weaponShop.appendChild(makeUpgradeCard(u, () => u.apply()));
             });
         }
     }
 
     // --- Game Loop ---
     function updatePlayerPosition() {
-        // Movement disabled during rebalance — re-enable when ready
-        const dx = 0, dy = 0;
+        let dx = 0, dy = 0;
+        if (keysHeld.w) dy -= PLAYER_SPEED;
+        if (keysHeld.s) dy += PLAYER_SPEED;
+        if (keysHeld.a) dx -= PLAYER_SPEED;
+        if (keysHeld.d) dx += PLAYER_SPEED;
+        if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
+        playerX += dx;
+        playerY += dy;
         // Update turret targets to follow player
         const slots = getSlotPositions();
         miniTurrets.forEach(t => {
@@ -2016,6 +2055,8 @@ function spawnExplosion(x, y) {
             waveWasReady: true,
             invincFrames: 0,
             bulletRadius: 0,
+            credits: 80,
+            upgradeCounts: {},
             jamWindowAngle: Math.PI,
             streak: 0,
             streakFrames: 0,
