@@ -371,8 +371,8 @@ window.addEventListener('DOMContentLoaded', function() {
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS    = [0.40, 0.52, 0.66, 0.82, 1.00, 1.14, 1.22, 1.28];
-    const ENEMY_MAX_SPEED = 1.28;
+    const LEVEL_SPEEDS    = [0.36, 0.46, 0.57, 0.68, 0.78, 0.86, 0.92, 0.96];
+    const ENEMY_MAX_SPEED = 0.96;
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -389,7 +389,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const GATLING_BASE = { cooldown: 85, damage: 0.45, spread: 0.07 };
 
     const MINI_TURRET_MAX      = 4;
-    const MINI_TURRET_RANGE    = 200;
+    const MINI_TURRET_RANGE    = 140;
     const MINI_TURRET_COOLDOWN = 600;
     const MINI_TURRET_DAMAGE   = 1.0;
     const MINI_TURRET_HP       = 40;
@@ -438,10 +438,11 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
-        { key: 'accuracy', name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread       = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',   name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
-        { key: 'firerate', name: 'FIRE RATE', desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 10); } },
-        { key: 'heatsink', name: 'HEAT SINK', desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration  = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
+        { key: 'accuracy',   name: 'ACCURACY',    desc: 'Tighter grouping. Reduces bullet spread.',             apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',     name: 'DAMAGE',      desc: 'Harder hitting rounds. +0.5 damage per bullet.',       apply: s => { s.bulletDamage += 0.5; } },
+        { key: 'firerate',   name: 'FIRE RATE',   desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',        apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'heatsink',   name: 'HEAT SINK',   desc: 'Better thermal venting. Cuts jam duration by 20%.',    apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
+        { key: 'caliber',    name: 'CALIBER',     desc: 'Wider rounds. Each bullet has +3px hit radius.',       apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
     ];
 
     // --- Game State ---
@@ -584,7 +585,7 @@ window.addEventListener('DOMContentLoaded', function() {
         const last = LEVELS[LEVELS.length - 1];
         return {
             killsToNext:   last.killsToNext   + excess * 10,
-            spawnInterval: Math.max(120, last.spawnInterval - excess * 18),
+            spawnInterval: Math.max(200, last.spawnInterval - excess * 22),
             toughChance:   Math.min(0.75, last.toughChance  + excess * 0.015),
             eliteChance:   Math.min(0.85, last.eliteChance  + excess * 0.02),
         };
@@ -1052,7 +1053,8 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.globalAlpha = 1;
             ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 14;
             ctx.fillStyle = '#ffffff';
-            ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
+            const dotR = b.fromTurret ? 2 : 2 + (state.bulletRadius || 0) * 0.4;
+            ctx.beginPath(); ctx.arc(cx, cy, dotR, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
 
         });
@@ -1688,7 +1690,7 @@ function spawnExplosion(x, y) {
         const t = lenSq > 0
             ? Math.max(0, Math.min(1, ((e.x - x1) * dx + (e.y - y1) * dy) / lenSq))
             : 0;
-        return Math.hypot(e.x - (x1 + t * dx), e.y - (y1 + t * dy)) < (e.size || 10);
+        return Math.hypot(e.x - (x1 + t * dx), e.y - (y1 + t * dy)) < (e.size || 10) + (state.bulletRadius || 0);
     }
 
     // --- Vent Overheat ---
@@ -1855,7 +1857,7 @@ function spawnExplosion(x, y) {
         if (anyTurrets) {
             const sep = document.createElement('p');
             sep.className = 'shop-credits-line';
-            sep.style.marginTop = '16px';
+            sep.style.cssText = 'margin-top:20px; grid-column:1/-1; width:100%; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;';
             sep.textContent = 'TURRET UPGRADES';
             weaponShop.appendChild(sep);
 
@@ -2019,9 +2021,10 @@ function spawnExplosion(x, y) {
             jammed: false,
             jamFrames: 0,
             jamDuration: 80,
-            waveLastUsed: -WAVE_COOLDOWN, // starts ready
+            waveLastUsed: -WAVE_COOLDOWN,
             waveWasReady: true,
             invincFrames: 0,
+            bulletRadius: 0,
             jamWindowAngle: Math.PI,
             streak: 0,
             streakFrames: 0,
