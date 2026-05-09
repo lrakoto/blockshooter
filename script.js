@@ -371,7 +371,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const MINI_TURRET_MAX      = 4;
     const MINI_TURRET_RANGE    = 200;
     const MINI_TURRET_COOLDOWN = 900;
-    const MINI_TURRET_DAMAGE   = 0.5;
+    const MINI_TURRET_DAMAGE   = 1.0;
     const MINI_TURRET_HP       = 40;
     const CRATE_HP             = 16;
 
@@ -388,9 +388,10 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
-        { key: 'accuracy', name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',        apply: s => { s.spread       = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',   name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.25 damage per bullet.', apply: s => { s.bulletDamage += 0.25; } },
-        { key: 'firerate', name: 'FIRE RATE', desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',   apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'accuracy', name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread       = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',   name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
+        { key: 'firerate', name: 'FIRE RATE', desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'heatsink', name: 'HEAT SINK', desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration  = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
     ];
 
     // --- Game State ---
@@ -573,12 +574,13 @@ window.addEventListener('DOMContentLoaded', function() {
         let behavior = 'normal';
         const br       = Math.random();
         const zipChance = Math.min(0.18, state.level * 0.04);
-        const zigChance = Math.min(0.35, state.level * 0.09);
+        const zigChance = Math.min(0.18, state.level * 0.045);
         if      (br < zipChance)             behavior = 'zipper';
         else if (br < zipChance + zigChance) behavior = 'zigzag';
+        const size = behavior === 'zigzag' ? 14 : 10;
         enemies.push({
             x, y, hp, maxHp: hp, hitTimer: 0,
-            behavior,
+            behavior, size,
             zigzagPhase: Math.random() * Math.PI * 2,
             zipping: false, zipDuration: 0,
             zipCooldown: Math.floor(Math.random() * 25),
@@ -635,23 +637,31 @@ window.addEventListener('DOMContentLoaded', function() {
                 if (e.trail.length > 16) e.trail.pop();
             }
 
-            // Fading trail — wireframe front squares
+            // Fading trail — shape matches enemy type
             if (e.trail && e.trail.length > 0) {
                 const n = e.trail.length;
                 ctx.strokeStyle = col;
                 ctx.lineWidth   = 0.7;
                 e.trail.forEach((pos, i) => {
                     ctx.globalAlpha = (1 - (i + 1) / (n + 1)) * 0.40;
-                    ctx.strokeRect(pos.x - 5, pos.y - 5, 10, 10);
+                    if (e.behavior === 'zigzag') {
+                        ctx.beginPath();
+                        ctx.moveTo(pos.x, pos.y - 6);
+                        ctx.lineTo(pos.x - 5, pos.y + 4);
+                        ctx.lineTo(pos.x + 5, pos.y + 4);
+                        ctx.closePath(); ctx.stroke();
+                    } else if (e.behavior === 'zipper') {
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+                        ctx.stroke();
+                    } else {
+                        ctx.strokeRect(pos.x - 5, pos.y - 5, 10, 10);
+                    }
                 });
                 ctx.globalAlpha = 1;
             }
 
-            // Wireframe cube — 9 visible edges (front face + top + right faces)
-            const w = 10, h = 10, d = 4;
-            const fx = e.x - w / 2, fy = e.y - h / 2;
             const edgeCol = (e.behavior === 'zipper' && e.zipping) ? '#ffffff' : col;
-
             ctx.save();
             ctx.strokeStyle = edgeCol;
             ctx.lineWidth   = 1.2;
@@ -659,30 +669,59 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.lineCap     = 'round';
 
             if (e.behavior === 'zigzag') {
-                ctx.shadowColor = '#00ffaa'; ctx.shadowBlur = 18;
-            } else if (e.behavior === 'zipper' && e.zipping) {
-                ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 30;
+                // Wireframe pyramid — bigger, easier to track visually
+                ctx.shadowColor = '#00ffaa'; ctx.shadowBlur = 20;
+                const pw = 14, ph = 13, pd = 5;
+                const ax = e.x,           ay = e.y - ph / 2;
+                const blx = e.x - pw / 2, bly = e.y + ph / 2;
+                const brx = e.x + pw / 2, bry = e.y + ph / 2;
+                const dax = ax + pd,      day = ay - pd;
+                // Front triangular face
+                ctx.beginPath();
+                ctx.moveTo(ax, ay); ctx.lineTo(blx, bly); ctx.lineTo(brx, bry);
+                ctx.closePath(); ctx.stroke();
+                // Depth edges from apex and base-right corner
+                ctx.beginPath();
+                ctx.moveTo(ax,  ay);  ctx.lineTo(dax,        day);
+                ctx.moveTo(brx, bry); ctx.lineTo(brx + pd,   bry - pd);
+                ctx.moveTo(dax, day); ctx.lineTo(brx + pd,   bry - pd);
+                ctx.stroke();
+
             } else if (e.behavior === 'zipper') {
-                ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 12;
+                // Shaded sphere with specular highlight
+                const sr = 8;
+                if (e.zipping) { ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 30; }
+                else           { ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 14; }
+                const sGrad = ctx.createRadialGradient(e.x - sr * 0.35, e.y - sr * 0.35, sr * 0.05, e.x, e.y, sr);
+                sGrad.addColorStop(0,    'rgba(255,255,255,0.85)');
+                sGrad.addColorStop(0.45, col);
+                sGrad.addColorStop(1,    'rgba(0,0,0,0.55)');
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, sr, 0, Math.PI * 2);
+                ctx.fillStyle = sGrad;
+                ctx.fill();
+                ctx.lineWidth = 0.9;
+                ctx.stroke();
+
+            } else {
+                // Wireframe cube — 9 visible edges (front face + top + right faces)
+                const w = 10, h = 10, d = 4;
+                const fx = e.x - w / 2, fy = e.y - h / 2;
+                ctx.strokeRect(fx, fy, w, h);
+                ctx.beginPath();
+                ctx.moveTo(fx,         fy);     ctx.lineTo(fx + d,     fy - d);
+                ctx.moveTo(fx + w,     fy);     ctx.lineTo(fx + w + d, fy - d);
+                ctx.moveTo(fx + d,     fy - d); ctx.lineTo(fx + w + d, fy - d);
+                ctx.moveTo(fx + w,     fy + h); ctx.lineTo(fx + w + d, fy + h - d);
+                ctx.moveTo(fx + w + d, fy - d); ctx.lineTo(fx + w + d, fy + h - d);
+                ctx.stroke();
             }
-
-            // Front face
-            ctx.strokeRect(fx, fy, w, h);
-
-            // Top + right face edges (all in one path for efficiency)
-            ctx.beginPath();
-            ctx.moveTo(fx,         fy);     ctx.lineTo(fx + d,     fy - d);      // top-left depth
-            ctx.moveTo(fx + w,     fy);     ctx.lineTo(fx + w + d, fy - d);      // top-right depth
-            ctx.moveTo(fx + d,     fy - d); ctx.lineTo(fx + w + d, fy - d);      // top back edge
-            ctx.moveTo(fx + w,     fy + h); ctx.lineTo(fx + w + d, fy + h - d);  // bottom-right depth
-            ctx.moveTo(fx + w + d, fy - d); ctx.lineTo(fx + w + d, fy + h - d);  // right back vertical
-            ctx.stroke();
 
             ctx.restore();
 
             // HP bar — below enemy
             if (e.maxHp > 1) {
-                const bw = 16, bh = 1.5, bx = e.x - 8, by = e.y + 14;
+                const bw = 16, bh = 1.5, bx = e.x - 8, by = e.y + (e.size || 10) + 5;
                 ctx.fillStyle = '#222';
                 ctx.fillRect(bx, by, bw, bh);
                 ctx.fillStyle = getEnemyColor(e.hp);
@@ -1135,7 +1174,7 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.stroke();
 
         if (isJammed) {
-            const progress = state.jamFrames / 80;
+            const progress = state.jamFrames / state.jamDuration;
             const inZone   = progress >= VENT_ZONE_LO && progress <= VENT_ZONE_HI;
             // Highlighted vent zone (fixed arc band)
             ctx.beginPath();
@@ -1401,7 +1440,7 @@ function spawnExplosion(x, y) {
         const t = lenSq > 0
             ? Math.max(0, Math.min(1, ((e.x - x1) * dx + (e.y - y1) * dy) / lenSq))
             : 0;
-        return Math.hypot(e.x - (x1 + t * dx), e.y - (y1 + t * dy)) < 10;
+        return Math.hypot(e.x - (x1 + t * dx), e.y - (y1 + t * dy)) < (e.size || 10);
     }
 
     // --- Vent Overheat ---
@@ -1413,7 +1452,7 @@ function spawnExplosion(x, y) {
         const now = Date.now();
         if (now - (state.lastVented || 0) < 200) return;
         state.lastVented = now;
-        const progress = state.jamFrames / 80;
+        const progress = state.jamFrames / state.jamDuration;
         if (progress >= VENT_ZONE_LO && progress <= VENT_ZONE_HI) {
             state.jammed = false;
             state.jamFrames = 0;
@@ -1430,7 +1469,7 @@ function spawnExplosion(x, y) {
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
         state.heat = Math.min(100, state.heat + 7);
-        if (state.heat >= 100) { state.jammed = true; state.jamFrames = 80; state.jamWindowAngle = Math.PI; }
+        if (state.heat >= 100) { state.jammed = true; state.jamFrames = state.jamDuration; state.jamWindowAngle = Math.PI; }
 
         const tx = cursorPosX, ty = cursorPosY;
 
@@ -1713,6 +1752,7 @@ function spawnExplosion(x, y) {
             heat: 0,
             jammed: false,
             jamFrames: 0,
+            jamDuration: 80,
             jamWindowAngle: Math.PI,
             streak: 0,
             streakFrames: 0,
@@ -1747,8 +1787,8 @@ function spawnExplosion(x, y) {
         gameLoopInt = setInterval(gameLoop, 30);
         spawnInt    = setInterval(spawnEnemy, def.spawnInterval);
         moveInt     = setInterval(moveEnemies, 20);
-        crateInt          = setInterval(spawnCrate, 14000);
-        crateSpawnTimeout = setTimeout(spawnCrate, 5000);
+        crateInt          = setInterval(spawnCrate, 28000);
+        crateSpawnTimeout = setTimeout(spawnCrate, 14000);
     }
 
     // --- Button Listeners ---
