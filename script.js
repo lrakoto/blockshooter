@@ -437,14 +437,14 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
-        { key: 'accuracy',  name: 'ACCURACY',    baseCost: 80,  costStep: 45,  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',    name: 'DAMAGE',       baseCost: 110, costStep: 60,  desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
-        { key: 'firerate',  name: 'FIRE RATE',    baseCost: 90,  costStep: 50,  desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
-        { key: 'heatsink',  name: 'HEAT SINK',    baseCost: 80,  costStep: 40,  desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
-        { key: 'caliber',   name: 'CALIBER',      baseCost: 120, costStep: 65,  desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
-        { key: 'speed',     name: 'SPEED',        baseCost: 70,  costStep: 45,  desc: 'Move faster. +0.5 movement speed.',                  apply: s => { s.playerSpeed   = Math.min(8, (s.playerSpeed || PLAYER_SPEED) + 0.5); } },
-        { key: 'wavedmg',   name: 'WAVE POWER',   baseCost: 90,  costStep: 55,  desc: 'Wave strips HP from enemies hit. +1 damage.',        apply: s => { s.waveDamage    = (s.waveDamage || 1) + 1; } },
-        { key: 'waverange', name: 'WAVE RANGE',   baseCost: 75,  costStep: 45,  desc: 'Wider blast radius. +50px wave range.',              apply: s => { s.waveRange     = (s.waveRange  || WAVE_RANGE) + 50; } },
+        { key: 'accuracy',  name: 'ACCURACY',    baseCost: 100, costStep: 70,  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',    name: 'DAMAGE',       baseCost: 140, costStep: 90,  desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
+        { key: 'firerate',  name: 'FIRE RATE',    baseCost: 115, costStep: 75,  desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'heatsink',  name: 'HEAT SINK',    baseCost: 100, costStep: 65,  desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
+        { key: 'caliber',   name: 'CALIBER',      baseCost: 150, costStep: 95,  desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
+        { key: 'speed',     name: 'SPEED',        baseCost: 90,  costStep: 70,  desc: 'Move faster. +0.5 movement speed.',                  apply: s => { s.playerSpeed   = Math.min(8, (s.playerSpeed || PLAYER_SPEED) + 0.5); } },
+        { key: 'wavedmg',   name: 'WAVE POWER',   baseCost: 115, costStep: 80,  desc: 'Wave strips HP from enemies hit. +1 damage.',        apply: s => { s.waveDamage    = (s.waveDamage || 1) + 1; } },
+        { key: 'waverange', name: 'WAVE RANGE',   baseCost: 95,  costStep: 70,  desc: 'Wider blast radius. +50px wave range.',              apply: s => { s.waveRange     = (s.waveRange  || WAVE_RANGE) + 50; } },
     ];
 
     // --- Game State ---
@@ -1895,9 +1895,9 @@ function spawnExplosion(x, y) {
     }
 
     const TURRET_UPGRADES = [
-        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 130, costStep: 70, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
-        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 110, costStep: 55, desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
-        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 100, costStep: 50, desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
+        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 165, costStep: 110, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
+        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 140, costStep: 85,  desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
+        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 125, costStep: 80,  desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
     ];
 
     function getUpgradeCost(u) {
