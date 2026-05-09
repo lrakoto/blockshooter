@@ -329,6 +329,19 @@ window.addEventListener('DOMContentLoaded', function() {
         src.start(t);
     }
 
+    function playWaveReadySound() {
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const osc = ac.createOscillator(), gain = ac.createGain();
+        osc.connect(gain); gain.connect(ac.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1400, t);
+        osc.frequency.exponentialRampToValueAtTime(2200, t + 0.07);
+        gain.gain.setValueAtTime(0.12, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.start(t); osc.stop(t + 0.22);
+    }
+
     // --- Canvas Setup ---
     gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
     gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
@@ -381,9 +394,16 @@ window.addEventListener('DOMContentLoaded', function() {
     const MINI_TURRET_HP       = 40;
     const CRATE_HP             = 16;
 
-    const WAVE_RANGE      = 340;
-    const WAVE_PUSH       = 18;
+    const WAVE_RANGE      = 380;
+    const WAVE_PUSH       = 32;
     const WAVE_COOLDOWN   = 12000; // ms
+    const WAVE_CONE       = Math.PI * 0.55; // ~99° total arc
+
+    const FLAME_TURRET_MAX    = 4;
+    const FLAME_SLOT_OFFSET   = 95;
+    const FLAME_RANGE         = 130;
+    const FLAME_CONE          = Math.PI / 3;  // 60° arc
+    const FLAME_DPS           = 0.12;         // damage per game-loop tick (~4 DPS at 30ms)
 
     // Deployment slots — square around player, computed dynamically so they follow movement
     const SLOT_OFFSET = 62;
@@ -394,6 +414,23 @@ window.addEventListener('DOMContentLoaded', function() {
             { x: playerX + SLOT_OFFSET, y: playerY + SLOT_OFFSET },
             { x: playerX - SLOT_OFFSET, y: playerY + SLOT_OFFSET },
         ];
+    }
+
+    // Flame turret slots — cardinal directions, slightly further out
+    function getFlameSlotPositions() {
+        return [
+            { x: playerX,                    y: playerY - FLAME_SLOT_OFFSET },
+            { x: playerX + FLAME_SLOT_OFFSET, y: playerY },
+            { x: playerX,                    y: playerY + FLAME_SLOT_OFFSET },
+            { x: playerX - FLAME_SLOT_OFFSET, y: playerY },
+        ];
+    }
+
+    function getNextFlameSlot() {
+        for (let i = 0; i < FLAME_TURRET_MAX; i++) {
+            if (!flameTurrets.some(t => t.slotIdx === i)) return i;
+        }
+        return -1;
     }
 
     // Upgrades offered at each level-up — player picks one
@@ -414,6 +451,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let muzzleFlashAngle = 0;
 
     let miniTurrets       = [];
+    let flameTurrets      = [];
     let upgradeCrates     = [];
     let circleHitFlashes  = [];
     let waveRings         = [];
@@ -538,7 +576,15 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Level Helpers ---
     function getLevelDef() {
-        return LEVELS[Math.min(state.level - 1, LEVELS.length - 1)];
+        if (state.level <= LEVELS.length) return LEVELS[state.level - 1];
+        const excess = state.level - LEVELS.length;
+        const last = LEVELS[LEVELS.length - 1];
+        return {
+            killsToNext:   last.killsToNext   + excess * 6,
+            spawnInterval: Math.max(120, last.spawnInterval - excess * 18),
+            toughChance:   Math.min(0.75, last.toughChance  + excess * 0.015),
+            eliteChance:   Math.min(0.85, last.eliteChance  + excess * 0.02),
+        };
     }
 
     function getEnemyHp() {
@@ -642,20 +688,24 @@ window.addEventListener('DOMContentLoaded', function() {
         const now = Date.now();
         if (now - state.waveLastUsed < WAVE_COOLDOWN) return;
         state.waveLastUsed = now;
-        shakeCanvas(6);
-        // Push all enemies within range away from player
+        shakeCanvas(8);
+        const aimAngle = Math.atan2(cursorPosY - centerY, cursorPosX - centerX);
+        const coneHalf = WAVE_CONE / 2;
         enemies.forEach(e => {
             const dx = e.x - playerX, dy = e.y - playerY;
             const dist = Math.hypot(dx, dy) || 1;
-            if (dist < WAVE_RANGE) {
-                const force = (1 - dist / WAVE_RANGE) * WAVE_PUSH;
-                e.pushVx = (dx / dist) * force;
-                e.pushVy = (dy / dist) * force;
-            }
+            if (dist >= WAVE_RANGE) return;
+            let diff = Math.atan2(dy, dx) - aimAngle;
+            diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+            if (Math.abs(diff) > coneHalf) return;
+            const coneScale = 1 - Math.abs(diff) / coneHalf;
+            const distScale = 1 - dist / WAVE_RANGE;
+            const force = WAVE_PUSH * (0.4 + coneScale * 0.6) * (0.5 + distScale * 0.5);
+            e.pushVx = (dx / dist) * force;
+            e.pushVy = (dy / dist) * force;
         });
-        // Spawn expanding ring visuals
         for (let i = 0; i < 3; i++) {
-            waveRings.push({ x: playerX, y: playerY, r: 20 + i * 30, life: 22, maxLife: 22, delay: i * 3 });
+            waveRings.push({ x: playerX, y: playerY, r: 18 + i * 28, life: 24, maxLife: 24, delay: i * 4, aimAngle, coneHalf });
         }
     }
 
@@ -911,24 +961,39 @@ window.addEventListener('DOMContentLoaded', function() {
                         c.hp -= b.damage;
                         c.hitTimer = 6;
                         if (c.hp <= 0) {
-                            const slotIdx = getNextTurretSlot();
-                            if (slotIdx !== -1) {
-                                const slot = getSlotPositions()[slotIdx];
-                                miniTurrets.push({
-                                    x: slot.x, y: slot.y,
-                                    targetX: slot.x, targetY: slot.y,
-                                    slotIdx,
-                                    hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
-                                    range: MINI_TURRET_RANGE,
-                                    fireCooldown: MINI_TURRET_COOLDOWN,
-                                    damage: MINI_TURRET_DAMAGE,
-                                    lastFired: 0,
-                                    lastAngle: 0,
-                                    wobblePhase: Math.random() * Math.PI * 2,
-                                    wobbleFreq:  0.025 + Math.random() * 0.02,
-                                    wobbleAmp:   3 + Math.random() * 3,
-                                    lerpSpeed:   0.055 + Math.random() * 0.04,
-                                });
+                            if (c.crateType === 'flame') {
+                                const slotIdx = getNextFlameSlot();
+                                if (slotIdx !== -1) {
+                                    const slot = getFlameSlotPositions()[slotIdx];
+                                    flameTurrets.push({
+                                        x: slot.x, y: slot.y, slotIdx,
+                                        hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
+                                        lastAngle: 0,
+                                        wobblePhase: Math.random() * Math.PI * 2,
+                                        wobbleFreq:  0.022 + Math.random() * 0.018,
+                                        wobbleAmp:   2.5 + Math.random() * 2.5,
+                                        lerpSpeed:   0.05 + Math.random() * 0.035,
+                                    });
+                                }
+                            } else {
+                                const slotIdx = getNextTurretSlot();
+                                if (slotIdx !== -1) {
+                                    const slot = getSlotPositions()[slotIdx];
+                                    miniTurrets.push({
+                                        x: slot.x, y: slot.y,
+                                        targetX: slot.x, targetY: slot.y,
+                                        slotIdx,
+                                        hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
+                                        range: MINI_TURRET_RANGE,
+                                        fireCooldown: MINI_TURRET_COOLDOWN,
+                                        damage: MINI_TURRET_DAMAGE,
+                                        lastFired: 0, lastAngle: 0,
+                                        wobblePhase: Math.random() * Math.PI * 2,
+                                        wobbleFreq:  0.025 + Math.random() * 0.02,
+                                        wobbleAmp:   3 + Math.random() * 3,
+                                        lerpSpeed:   0.055 + Math.random() * 0.04,
+                                    });
+                                }
                             }
                             spawnExplosion(c.x, c.y);
                             return false;
@@ -1027,21 +1092,115 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.restore();
     }
 
+    // --- Flame Turrets ---
+    function renderFlameTurrets() {
+        const slots = getFlameSlotPositions();
+        flameTurrets = flameTurrets.filter(t => t.hp > 0);
+
+        // Lag follow
+        flameTurrets.forEach(t => {
+            if (t.slotIdx !== undefined) {
+                t.wobblePhase += t.wobbleFreq;
+                const wob  = Math.sin(t.wobblePhase) * t.wobbleAmp;
+                const perpX = Math.cos(t.wobblePhase + Math.PI / 2) * wob;
+                const perpY = Math.sin(t.wobblePhase + Math.PI / 2) * wob;
+                t.x += ((slots[t.slotIdx].x + perpX) - t.x) * t.lerpSpeed;
+                t.y += ((slots[t.slotIdx].y + perpY) - t.y) * t.lerpSpeed;
+            }
+
+            // Find closest enemy in range
+            let closest = null, closestDist = FLAME_RANGE;
+            enemies.forEach(e => {
+                const d = Math.hypot(e.x - t.x, e.y - t.y);
+                if (d < closestDist) { closest = e; closestDist = d; }
+            });
+
+            const angle = closest ? Math.atan2(closest.y - t.y, closest.x - t.x) : (t.lastAngle || 0);
+            if (closest) t.lastAngle = angle;
+
+            // Flame cone visual — flickering layered arcs
+            if (closest) {
+                for (let f = 0; f < 5; f++) {
+                    const jitter = (Math.random() - 0.5) * 0.35;
+                    const reach  = FLAME_RANGE * (0.55 + Math.random() * 0.45);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(t.x, t.y);
+                    ctx.arc(t.x, t.y, reach, angle - FLAME_CONE / 2 + jitter, angle + FLAME_CONE / 2 + jitter);
+                    ctx.closePath();
+                    const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, reach);
+                    grad.addColorStop(0,    `rgba(255,230,100,${0.55 - f * 0.08})`);
+                    grad.addColorStop(0.35, `rgba(255,110,0,${0.40 - f * 0.06})`);
+                    grad.addColorStop(1,    'rgba(180,20,0,0)');
+                    ctx.fillStyle = grad;
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // Apply damage to enemies in cone each frame
+                enemies.forEach(e => {
+                    const d = Math.hypot(e.x - t.x, e.y - t.y);
+                    if (d >= FLAME_RANGE) return;
+                    let diff = Math.atan2(e.y - t.y, e.x - t.x) - angle;
+                    diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+                    if (Math.abs(diff) < FLAME_CONE / 2) hitEnemy(e, FLAME_DPS);
+                });
+            }
+
+            // Body — squat hexagonal base, orange barrel
+            ctx.save();
+            ctx.translate(t.x, t.y);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            for (let v = 0; v < 6; v++) {
+                const a = (Math.PI / 3) * v + Math.PI / 6;
+                v === 0 ? ctx.moveTo(Math.cos(a) * 9, Math.sin(a) * 9)
+                        : ctx.lineTo(Math.cos(a) * 9, Math.sin(a) * 9);
+            }
+            ctx.closePath();
+            ctx.fillStyle   = 'rgba(70,35,10,0.45)';
+            ctx.shadowColor = 'rgba(255,120,0,0.7)';
+            ctx.shadowBlur  = 10;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,140,40,0.75)';
+            ctx.lineWidth   = 1;
+            ctx.stroke();
+            // Wide stubby barrel
+            ctx.fillStyle   = '#ff6600';
+            ctx.shadowColor = '#ff4400';
+            ctx.shadowBlur  = 6;
+            ctx.beginPath();
+            ctx.roundRect(1, -3, 9, 6, 2);
+            ctx.fill();
+            ctx.restore();
+
+            // HP bar
+            const bw = 22, bh = 1.5, hpR = t.hp / t.maxHp;
+            ctx.fillStyle = '#222';
+            ctx.fillRect(t.x - bw / 2, t.y + 13, bw, bh);
+            ctx.fillStyle = hpR > 0.5 ? '#ff8833' : '#cc2200';
+            ctx.fillRect(t.x - bw / 2, t.y + 13, bw * hpR, bh);
+        });
+    }
+
     // --- Wave Rings ---
     function renderWaveRings() {
         waveRings = waveRings.filter(w => w.life > 0);
         waveRings.forEach(w => {
             if (w.delay > 0) { w.delay--; return; }
-            w.r    += 14;
+            w.r    += 15;
             w.life--;
             const a = w.life / w.maxLife;
             ctx.save();
             ctx.beginPath();
-            ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(80,210,255,${a * 0.9})`;
-            ctx.lineWidth   = 4 * a;
+            ctx.arc(w.x, w.y, w.r,
+                w.aimAngle - w.coneHalf,
+                w.aimAngle + w.coneHalf);
+            ctx.strokeStyle = `rgba(80,210,255,${a * 0.95})`;
+            ctx.lineWidth   = 5 * a;
+            ctx.lineCap     = 'round';
             ctx.shadowColor = '#00ccff';
-            ctx.shadowBlur  = 18 * a;
+            ctx.shadowBlur  = 22 * a;
             ctx.stroke();
             ctx.restore();
         });
@@ -1293,11 +1452,12 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.stroke();
         }
         if (waveReady) {
+            const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 220);
             ctx.font      = '700 7px "Exo 2", sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#00eeff';
-            ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 8;
-            ctx.fillText('WAVE [E]', centerX, centerY + 66);
+            ctx.fillStyle = `rgba(0,238,255,${pulse})`;
+            ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10 * pulse;
+            ctx.fillText('▶ WAVE [E]', centerX, centerY + 66);
         }
         ctx.restore();
     }
@@ -1312,7 +1472,14 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Upgrade Crates ---
     function spawnCrate() {
         if (upgradeCrates.length >= 2) return;
-        if (getNextTurretSlot() === -1) return;
+        const gatlingFull = getNextTurretSlot() === -1;
+        const flameFull   = getNextFlameSlot()   === -1;
+        if (gatlingFull && flameFull) return;
+        // Pick type based on availability; prefer whichever has more open slots
+        let crateType;
+        if (gatlingFull)      crateType = 'flame';
+        else if (flameFull)   crateType = 'gatling';
+        else                  crateType = Math.random() < 0.5 ? 'gatling' : 'flame';
         let x, y, attempts = 0;
         do {
             const angle = Math.random() * Math.PI * 2;
@@ -1321,17 +1488,19 @@ window.addEventListener('DOMContentLoaded', function() {
             y = playerY + Math.sin(angle) * dist;
             attempts++;
         } while (Math.hypot(x - playerX, y - playerY) < 140 && attempts < 25);
-        upgradeCrates.push({ x, y, hp: CRATE_HP, maxHp: CRATE_HP, hitTimer: 0 });
+        upgradeCrates.push({ x, y, hp: CRATE_HP, maxHp: CRATE_HP, hitTimer: 0, crateType });
     }
 
     function renderCrates() {
         upgradeCrates.forEach(c => {
             if (c.hitTimer > 0) c.hitTimer--;
+            const isFlame = c.crateType === 'flame';
+            const baseCol = isFlame ? '#ff7722' : '#1bffc1';
             ctx.save();
             const flash = c.hitTimer > 0;
-            ctx.shadowColor = '#1bffc1';
+            ctx.shadowColor = baseCol;
             ctx.shadowBlur  = flash ? 22 : 8;
-            ctx.fillStyle   = flash ? '#ffffff' : '#1bffc1';
+            ctx.fillStyle   = flash ? '#ffffff' : baseCol;
             ctx.fillRect(c.x - 8, c.y - 8, 16, 16);
             ctx.shadowBlur = 0;
             ctx.fillStyle  = '#000';
@@ -1341,7 +1510,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const bw = 20, bh = 3;
             ctx.fillStyle = '#111';
             ctx.fillRect(c.x - bw / 2, c.y - 16, bw, bh);
-            ctx.fillStyle = '#1bffc1';
+            ctx.fillStyle = baseCol;
             ctx.fillRect(c.x - bw / 2, c.y - 16, bw * (c.hp / c.maxHp), bh);
         });
     }
@@ -1634,14 +1803,10 @@ function spawnExplosion(x, y) {
         if (state.levelKills < def.killsToNext) return;
         clearAllIntervals();
         enemies = [];
-        if (state.level >= LEVELS.length) {
-            gameWin();
-        } else {
-            state.level++;
-            state.levelKills = 0;
-            levelDisplay.textContent = state.level;
-            showLevelUpScreen();
-        }
+        state.level++;
+        state.levelKills = 0;
+        levelDisplay.textContent = state.level;
+        showLevelUpScreen();
     }
 
     function showLevelUpScreen() {
@@ -1711,7 +1876,7 @@ function spawnExplosion(x, y) {
     function updatePlayerPosition() {
         // Movement disabled during rebalance — re-enable when ready
         const dx = 0, dy = 0;
-        // Update mini turret targets to follow player
+        // Update turret targets to follow player
         const slots = getSlotPositions();
         miniTurrets.forEach(t => {
             if (t.slotIdx !== undefined) {
@@ -1768,6 +1933,7 @@ function spawnExplosion(x, y) {
         renderGatlingBullets();
         renderCrates();
         renderMiniTurrets();
+        renderFlameTurrets();
         renderShellCasings();
         renderWaveRings();
         renderGatlingMuzzleFlash();
@@ -1776,6 +1942,11 @@ function spawnExplosion(x, y) {
         if (mouseIsDown) fireAction();
         hitDetect();
         checkLevelUp();
+
+        // Wave ready ping
+        const waveNowReady = Date.now() - state.waveLastUsed >= WAVE_COOLDOWN;
+        if (waveNowReady && !state.waveWasReady) playWaveReadySound();
+        state.waveWasReady = waveNowReady;
 
         // Overheat: cool down, handle jam
         if (state.jammed) {
@@ -1850,7 +2021,8 @@ function spawnExplosion(x, y) {
             jammed: false,
             jamFrames: 0,
             jamDuration: 80,
-            waveLastUsed: 0,
+            waveLastUsed: -WAVE_COOLDOWN, // starts ready
+            waveWasReady: true,
             invincFrames: 0,
             jamWindowAngle: Math.PI,
             streak: 0,
@@ -1860,7 +2032,7 @@ function spawnExplosion(x, y) {
         playerX = centerX; playerY = centerY;
         keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
-        miniTurrets = []; upgradeCrates = []; circleHitFlashes = []; waveRings = [];
+        miniTurrets = []; flameTurrets = []; upgradeCrates = []; circleHitFlashes = []; waveRings = [];
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
@@ -1933,13 +2105,23 @@ function spawnExplosion(x, y) {
     });
 
     // --- End States ---
-    function gameWin() {
-        clearAllIntervals();
-        winMenu.style.display = 'block';
-        hideGame();
+    function getHighScore() {
+        return parseInt(localStorage.getItem('blockshooter_hs') || '0');
     }
+    function saveHighScore(score) {
+        const prev = getHighScore();
+        if (score > prev) { localStorage.setItem('blockshooter_hs', score); return true; }
+        return false;
+    }
+
     function gameLose() {
         clearAllIntervals();
+        const isNew = saveHighScore(state.score);
+        const hs    = getHighScore();
+        document.querySelector('#lose-score').textContent     = `Score: ${state.score}  |  Level ${state.level}`;
+        document.querySelector('#lose-highscore').textContent = isNew
+            ? `NEW HIGH SCORE: ${hs}`
+            : `High Score: ${hs}`;
         loseMenu.style.display = 'block';
         hideGame();
     }
