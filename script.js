@@ -422,7 +422,7 @@ window.addEventListener('DOMContentLoaded', function() {
             this.x = x; this.y = y; this.width = width; this.height = height;
             this.render = () => {
                 ctx.save();
-                ctx.translate(playerX, playerY);
+                ctx.translate(centerX, centerY);
 
                 // Outer hex ring — platform base
                 ctx.beginPath();
@@ -561,9 +561,13 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Enemies ---
     function spawnEnemy() {
         let x, y;
+        // Spawn in a ring around the player in world space (just outside the visible area)
+        const spawnR = Math.max(canvasWidth, canvasHeight) * 0.6;
         do {
-            x = Math.floor(Math.random() * canvasWidth) - 15;
-            y = Math.floor(Math.random() * canvasHeight) - 15;
+            const angle = Math.random() * Math.PI * 2;
+            const dist  = 180 + Math.random() * spawnR;
+            x = playerX + Math.cos(angle) * dist;
+            y = playerY + Math.sin(angle) * dist;
         } while (Math.hypot(x - playerX, y - playerY) < 160);
         const hp = getEnemyHp();
         let behavior = 'normal';
@@ -697,13 +701,13 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     function drawPlayerBarrel() {
-        const dx  = cursorPosX - playerX;
-        const dy  = cursorPosY - playerY;
+        const dx  = cursorPosX - centerX;
+        const dy  = cursorPosY - centerY;
         const mag = Math.sqrt(dx * dx + dy * dy);
         if (mag < 1) return;
         const angle = Math.atan2(dy, dx);
         ctx.save();
-        ctx.translate(playerX, playerY);
+        ctx.translate(centerX, centerY);
         ctx.rotate(angle);
         // Dark outline for depth
         ctx.fillStyle  = '#06141f';
@@ -947,13 +951,13 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // --- Layer 1: Fresnel fill (transparent center, opaque rim like real glass) ---
         ctx.save();
-        const fresnelGrad = ctx.createRadialGradient(playerX, playerY, 0, playerX, playerY, R);
+        const fresnelGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, R);
         fresnelGrad.addColorStop(0,    'rgba(180,230,255,0.00)');
         fresnelGrad.addColorStop(0.60, 'rgba(120,190,255,0.04)');
         fresnelGrad.addColorStop(0.85, 'rgba(100,170,240,0.12)');
         fresnelGrad.addColorStop(1,    'rgba(80,150,230,0.26)');
         ctx.beginPath();
-        ctx.arc(playerX, playerY, R, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
         ctx.fillStyle = fresnelGrad;
         ctx.fill();
         ctx.restore();
@@ -961,7 +965,7 @@ window.addEventListener('DOMContentLoaded', function() {
         // --- Layer 2: Hex grid + lighting, clipped to dome ---
         ctx.save();
         ctx.beginPath();
-        ctx.arc(playerX, playerY, R, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
         ctx.clip();
 
         // Hex grid — dome-projected (hexes shrink toward edge, simulating curved surface)
@@ -980,7 +984,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 const cosT     = Math.max(0.18, Math.cos(theta)); // min so edge hexes stay visible
                 const phi      = dist > 0.5 ? Math.atan2(dy, dx) : 0;
                 const cosPhi   = Math.cos(phi), sinPhi = Math.sin(phi);
-                const hx = playerX + dx, hy = playerY + dy;
+                const hx = centerX + dx, hy = centerY + dy;
                 for (let v = 0; v < 6; v++) {
                     const a  = (Math.PI / 3) * v;
                     const vx = hexR * Math.cos(a), vy = hexR * Math.sin(a);
@@ -1000,34 +1004,34 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.stroke();
 
         // Bottom-half interior shadow (dome curves away from light source)
-        const bottomShadow = ctx.createLinearGradient(playerX, playerY - R * 0.1, playerX, playerY + R);
+        const bottomShadow = ctx.createLinearGradient(centerX, centerY - R * 0.1, centerX, centerY + R);
         bottomShadow.addColorStop(0, 'rgba(0,10,30,0)');
         bottomShadow.addColorStop(1, 'rgba(0,15,45,0.35)');
         ctx.fillStyle = bottomShadow;
-        ctx.fillRect(playerX - R, playerY - R * 0.1, R * 2, R * 1.1);
+        ctx.fillRect(centerX - R, centerY - R * 0.1, R * 2, R * 1.1);
 
         // Broad soft specular (convex dome top-left highlight)
-        const spec1 = ctx.createRadialGradient(playerX - 16, playerY - 20, 0, playerX - 16, playerY - 20, 62);
+        const spec1 = ctx.createRadialGradient(centerX - 16, centerY - 20, 0, centerX - 16, centerY - 20, 62);
         spec1.addColorStop(0,   'rgba(255,255,255,0.30)');
         spec1.addColorStop(0.5, 'rgba(255,255,255,0.07)');
         spec1.addColorStop(1,   'rgba(255,255,255,0)');
         ctx.fillStyle = spec1;
-        ctx.fillRect(playerX - R, playerY - R, R * 2, R * 2);
+        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
 
         // Tight primary reflection dot
-        const spec2 = ctx.createRadialGradient(playerX - 30, playerY - 36, 0, playerX - 30, playerY - 36, 15);
+        const spec2 = ctx.createRadialGradient(centerX - 30, centerY - 36, 0, centerX - 30, centerY - 36, 15);
         spec2.addColorStop(0,   'rgba(255,255,255,0.80)');
         spec2.addColorStop(0.5, 'rgba(255,255,255,0.22)');
         spec2.addColorStop(1,   'rgba(255,255,255,0)');
         ctx.fillStyle = spec2;
-        ctx.fillRect(playerX - R, playerY - R, R * 2, R * 2);
+        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
 
         ctx.restore(); // end clip
 
         // --- Layer 3: Subtle rim ---
         ctx.save();
         ctx.beginPath();
-        ctx.arc(playerX, playerY, R, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(160,220,255,0.32)';
         ctx.shadowColor  = 'rgba(120,200,255,0.40)';
         ctx.shadowBlur   = 8;
@@ -1056,7 +1060,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.lineWidth   = 7 * taper * alpha;
                 ctx.strokeStyle = `rgba(140,210,255,${alpha * taper})`;
                 ctx.beginPath();
-                ctx.arc(playerX, playerY, R, aStart, aEnd);
+                ctx.arc(centerX, centerY, R, aStart, aEnd);
                 ctx.stroke();
             }
             ctx.restore();
@@ -1064,10 +1068,10 @@ window.addEventListener('DOMContentLoaded', function() {
             // Ripple rings expanding inward from impact point, clipped to bubble
             ctx.save();
             ctx.beginPath();
-            ctx.arc(playerX, playerY, R - 0.5, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, R - 0.5, 0, Math.PI * 2);
             ctx.clip();
-            const ix = playerX + Math.cos(f.angle) * R;
-            const iy = playerY + Math.sin(f.angle) * R;
+            const ix = centerX + Math.cos(f.angle) * R;
+            const iy = centerY + Math.sin(f.angle) * R;
             for (let j = 0; j < 3; j++) {
                 const rp = progress - j * 0.22;
                 if (rp <= 0 || rp >= 1.1) continue;
@@ -1115,7 +1119,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // Background ring — always faint
         ctx.beginPath();
-        ctx.arc(playerX, playerY, radius, 0, fullSweep);
+        ctx.arc(centerX, centerY, radius, 0, fullSweep);
         ctx.strokeStyle = 'rgba(255,255,255,0.07)';
         ctx.lineWidth   = 1.5;
         ctx.stroke();
@@ -1125,7 +1129,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const inZone   = progress >= VENT_ZONE_LO && progress <= VENT_ZONE_HI;
             // Highlighted vent zone (fixed arc band)
             ctx.beginPath();
-            ctx.arc(playerX, playerY, radius,
+            ctx.arc(centerX, centerY, radius,
                 startAngle + fullSweep * VENT_ZONE_LO,
                 startAngle + fullSweep * VENT_ZONE_HI);
             ctx.strokeStyle = 'rgba(255,220,0,0.72)';
@@ -1134,7 +1138,7 @@ window.addEventListener('DOMContentLoaded', function() {
             // Countdown arc (shrinks as jam clears)
             if (progress > 0) {
                 ctx.beginPath();
-                ctx.arc(playerX, playerY, radius, startAngle, startAngle + fullSweep * progress);
+                ctx.arc(centerX, centerY, radius, startAngle, startAngle + fullSweep * progress);
                 ctx.strokeStyle = inZone ? '#ffcc00' : '#ff3300';
                 ctx.shadowColor = inZone ? '#ffcc00' : '#ff3300';
                 ctx.shadowBlur  = inZone ? 10 : 4;
@@ -1145,12 +1149,12 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.font       = '700 8px "Exo 2", sans-serif';
             ctx.textAlign  = 'center';
             ctx.fillStyle  = inZone ? '#ffcc00' : 'rgba(255,80,0,0.8)';
-            ctx.fillText(inZone ? '▶ VENT [R]' : 'JAMMED', playerX, playerY + 55);
+            ctx.fillText(inZone ? '▶ VENT [R]' : 'JAMMED', centerX, centerY + 55);
         } else {
             // Normal heat arc — orange→red as it fills
             const g = Math.round(200 - heatRatio * 200);
             ctx.beginPath();
-            ctx.arc(playerX, playerY, radius, startAngle, startAngle + fullSweep * heatRatio);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + fullSweep * heatRatio);
             ctx.strokeStyle = `rgb(255,${g},0)`;
             ctx.shadowColor = `rgb(255,${g},0)`;
             ctx.shadowBlur  = heatRatio > 0.65 ? 7 : 2;
@@ -1413,19 +1417,19 @@ function spawnExplosion(x, y) {
 
         // Muzzle flash at barrel tip
         const fireInterval = setInterval(function() {
-            turretBarrel(playerX, playerY, cursorPosX, cursorPosY, 30, 'white', 5);
-            turretBarrel(playerX, playerY, cursorPosX, cursorPosY, 25, 'black', 5);
-            const dx = cursorPosX - playerX, dy = cursorPosY - playerY;
+            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
+            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
+            const dx = cursorPosX - centerX, dy = cursorPosY - centerY;
             const mag = Math.sqrt(dx * dx + dy * dy);
             if (mag > 0) {
                 const s = Math.min(25, mag) / mag;
-                drawMuzzleFlash(playerX + dx * s, playerY + dy * s);
+                drawMuzzleFlash(centerX + dx * s, centerY + dy * s);
             }
         }, 10);
         setTimeout(() => clearInterval(fireInterval), 50);
 
         // Apply spread — random angular offset within ±spread/2
-        const baseAngle = Math.atan2(ty - playerY, tx - playerX);
+        const baseAngle = Math.atan2(ty - centerY, tx - centerX);
         const spreadOffset = (Math.random() - 0.5) * state.spread;
         const fireAngle = baseAngle + spreadOffset;
         const fireDx = Math.cos(fireAngle), fireDy = Math.sin(fireAngle);
@@ -1590,21 +1594,21 @@ function spawnExplosion(x, y) {
         // Scale: shrink down to 0.72 when jammed
         let turretScale = isJammed ? 0.72 : (1 - heatRatio * 0.08);
         ctx.save();
-        ctx.translate(playerX, playerY);
+        ctx.translate(centerX, centerY);
         ctx.scale(turretScale, turretScale);
-        ctx.translate(-playerX, -playerY);
+        ctx.translate(-centerX, -centerY);
         if (!jamBlink) {
             if (heatRatio > 0.05) {
                 const glowRadius = 36 + heatRatio * 22;
                 const glowAlpha  = heatRatio * (isJammed ? 0.85 : 0.55);
-                const grad = ctx.createRadialGradient(playerX, playerY, 10, playerX, playerY, glowRadius);
+                const grad = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, glowRadius);
                 const r = Math.round(255);
                 const g = Math.round(isJammed ? 0 : 180 - heatRatio * 180);
                 grad.addColorStop(0, `rgba(${r},${g},0,${glowAlpha})`);
                 grad.addColorStop(1, 'rgba(255,0,0,0)');
                 ctx.fillStyle = grad;
                 ctx.beginPath();
-                ctx.arc(playerX, playerY, glowRadius, 0, Math.PI * 2);
+                ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
                 ctx.fill();
             }
             playerTurret.render();
@@ -1614,6 +1618,12 @@ function spawnExplosion(x, y) {
 
         drawPlayerBarrel();
         turretTarget(cursorPosX, cursorPosY);
+
+        // Camera transform — world objects rendered relative to player position
+        const camX = centerX - playerX, camY = centerY - playerY;
+        gameCanvas.style.backgroundPosition = `${camX % 100}px ${camY % 100}px`;
+        ctx.save();
+        ctx.translate(camX, camY);
         renderEnemies();
         renderGatlingBullets();
         renderCrates();
@@ -1621,6 +1631,7 @@ function spawnExplosion(x, y) {
         renderShellCasings();
         renderGatlingMuzzleFlash();
         renderParticles();
+        ctx.restore();
         if (mouseIsDown) fireAction();
         hitDetect();
         checkLevelUp();
