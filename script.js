@@ -366,7 +366,7 @@ window.addEventListener('DOMContentLoaded', function() {
         'Final wave. Maximum threat level. Hold the line, Cadet.',
     ];
 
-    const GATLING_BASE = { cooldown: 130, damage: 0.75, spread: 0.07 };
+    const GATLING_BASE = { cooldown: 85, damage: 0.45, spread: 0.07 };
 
     const MINI_TURRET_MAX      = 4;
     const MINI_TURRET_RANGE    = 200;
@@ -1581,14 +1581,8 @@ function spawnExplosion(x, y) {
 
     // --- Game Loop ---
     function updatePlayerPosition() {
-        let dx = 0, dy = 0;
-        if (keysHeld.w) dy -= PLAYER_SPEED;
-        if (keysHeld.s) dy += PLAYER_SPEED;
-        if (keysHeld.a) dx -= PLAYER_SPEED;
-        if (keysHeld.d) dx += PLAYER_SPEED;
-        if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; } // normalise diagonal
-        playerX += dx;
-        playerY += dy;
+        // Movement disabled during rebalance — re-enable when ready
+        const dx = 0, dy = 0;
         // Update mini turret targets to follow player
         const slots = getSlotPositions();
         miniTurrets.forEach(t => {
