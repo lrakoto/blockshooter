@@ -331,7 +331,7 @@ window.addEventListener('DOMContentLoaded', function() {
         'Final wave. Maximum threat level. Hold the line, Cadet.',
     ];
 
-    const GATLING_BASE = { cooldown: 65, damage: 0.75, spread: 0.18 };
+    const GATLING_BASE = { cooldown: 65, damage: 0.75, spread: 0.12 };
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
@@ -836,7 +836,36 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Game Loop ---
     function gameLoop() {
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        playerTurret.render();
+
+        // Turret heat glow + overheat blink/shrink
+        const heatRatio = state.heat / 100;
+        const isJammed  = state.jammed;
+        // Blink: alternate visibility every 4 frames when jammed
+        const jamBlink  = isJammed && (Math.floor(Date.now() / 80) % 2 === 0);
+        // Scale: shrink down to 0.72 when jammed
+        let turretScale = isJammed ? 0.72 : (1 - heatRatio * 0.08);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(turretScale, turretScale);
+        ctx.translate(-centerX, -centerY);
+        if (!jamBlink) {
+            if (heatRatio > 0.05) {
+                const glowRadius = 36 + heatRatio * 22;
+                const glowAlpha  = heatRatio * (isJammed ? 0.85 : 0.55);
+                const grad = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, glowRadius);
+                const r = Math.round(255);
+                const g = Math.round(isJammed ? 0 : 180 - heatRatio * 180);
+                grad.addColorStop(0, `rgba(${r},${g},0,${glowAlpha})`);
+                grad.addColorStop(1, 'rgba(255,0,0,0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            playerTurret.render();
+        }
+        ctx.restore();
+
         turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
         turretTarget(cursorPosX, cursorPosY);
         renderEnemies();
