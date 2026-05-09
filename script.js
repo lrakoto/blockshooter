@@ -337,6 +337,12 @@ window.addEventListener('DOMContentLoaded', function() {
     const centerX = canvasWidth / 2;
     const centerY = canvasHeight / 2;
 
+    // --- Player position (mutable — updated by WASD) ---
+    let playerX = centerX;
+    let playerY = centerY;
+    const PLAYER_SPEED = 3;
+    const keysHeld = { w: false, a: false, s: false, d: false };
+
     // --- Game Constants ---
 
     // 5 levels — killsToNext: kills needed to advance, spawnInterval: ms between spawns
@@ -360,7 +366,7 @@ window.addEventListener('DOMContentLoaded', function() {
         'Final wave. Maximum threat level. Hold the line, Cadet.',
     ];
 
-    const GATLING_BASE = { cooldown: 110, damage: 0.75, spread: 0.07 };
+    const GATLING_BASE = { cooldown: 130, damage: 0.75, spread: 0.07 };
 
     const MINI_TURRET_MAX      = 4;
     const MINI_TURRET_RANGE    = 200;
@@ -369,33 +375,23 @@ window.addEventListener('DOMContentLoaded', function() {
     const MINI_TURRET_HP       = 40;
     const CRATE_HP             = 8;
 
-    // Fixed deployment slots — square around the player turret
-    const SLOT_OFFSET  = 85;
-    const TURRET_SLOTS = [
-        { x: centerX - SLOT_OFFSET, y: centerY - SLOT_OFFSET },
-        { x: centerX + SLOT_OFFSET, y: centerY - SLOT_OFFSET },
-        { x: centerX + SLOT_OFFSET, y: centerY + SLOT_OFFSET },
-        { x: centerX - SLOT_OFFSET, y: centerY + SLOT_OFFSET },
-    ];
+    // Deployment slots — square around player, computed dynamically so they follow movement
+    const SLOT_OFFSET = 85;
+    function getSlotPositions() {
+        return [
+            { x: playerX - SLOT_OFFSET, y: playerY - SLOT_OFFSET },
+            { x: playerX + SLOT_OFFSET, y: playerY - SLOT_OFFSET },
+            { x: playerX + SLOT_OFFSET, y: playerY + SLOT_OFFSET },
+            { x: playerX - SLOT_OFFSET, y: playerY + SLOT_OFFSET },
+        ];
+    }
 
     // Upgrades offered at each level-up — player picks one
-    // Base upgrades always available
-    const UPGRADES_BASE = [
+    const UPGRADES = [
         { key: 'accuracy', name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',        apply: s => { s.spread       = Math.max(0.02, s.spread - 0.05); } },
         { key: 'damage',   name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.25 damage per bullet.', apply: s => { s.bulletDamage += 0.25; } },
+        { key: 'firerate', name: 'FIRE RATE', desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',   apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 10); } },
     ];
-    // TODO: Raise level requirement (e.g. only appear from level 3+) once balance is confirmed
-    const UPGRADE_AUTOFIRE = {
-        key: 'autofire', name: 'AUTO FIRE',
-        desc: 'Unlock full-auto. Hold mouse button to fire continuously.',
-        apply: s => { s.autoFire = true; },
-    };
-    // Only offered after AUTO FIRE is purchased
-    const UPGRADE_FIRERATE = {
-        key: 'firerate', name: 'FIRE RATE',
-        desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',
-        apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 10); },
-    };
 
     // --- Game State ---
     let state = {};
@@ -416,7 +412,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let crateInt            = null;
     let crateSpawnTimeout   = null;
 
-    let cursorPosX = centerX;
+    let cursorPosX = playerX;
     let cursorPosY = 0;
     let mouseIsDown = false;
 
@@ -426,7 +422,7 @@ window.addEventListener('DOMContentLoaded', function() {
             this.x = x; this.y = y; this.width = width; this.height = height;
             this.render = () => {
                 ctx.save();
-                ctx.translate(centerX, centerY);
+                ctx.translate(playerX, playerY);
 
                 // Outer hex ring — platform base
                 ctx.beginPath();
@@ -495,7 +491,7 @@ window.addEventListener('DOMContentLoaded', function() {
             };
         }
     }
-    const playerTurret = new Player(centerX - 25, centerY - 25, 50, 50);
+    const playerTurret = new Player(playerX - 25, playerY - 25, 50, 50);
 
     // --- Input ---
     gameCanvas.addEventListener('mousemove', e => {
@@ -510,7 +506,19 @@ window.addEventListener('DOMContentLoaded', function() {
     gameCanvas.addEventListener('mouseup', e => { if (e.button === 0) mouseIsDown = false; });
     gameCanvas.addEventListener('mouseleave', () => { mouseIsDown = false; });
     window.addEventListener('keydown', e => {
-        if (e.key === 'r' || e.key === 'R') ventOverheat();
+        const k = e.key.toLowerCase();
+        if (k === 'r') ventOverheat();
+        if (k === 'w') keysHeld.w = true;
+        if (k === 'a') keysHeld.a = true;
+        if (k === 's') keysHeld.s = true;
+        if (k === 'd') keysHeld.d = true;
+    });
+    window.addEventListener('keyup', e => {
+        const k = e.key.toLowerCase();
+        if (k === 'w') keysHeld.w = false;
+        if (k === 'a') keysHeld.a = false;
+        if (k === 's') keysHeld.s = false;
+        if (k === 'd') keysHeld.d = false;
     });
 
 
@@ -556,7 +564,7 @@ window.addEventListener('DOMContentLoaded', function() {
         do {
             x = Math.floor(Math.random() * canvasWidth) - 15;
             y = Math.floor(Math.random() * canvasHeight) - 15;
-        } while (Math.hypot(x - centerX, y - centerY) < 160);
+        } while (Math.hypot(x - playerX, y - playerY) < 160);
         const hp = getEnemyHp();
         let behavior = 'normal';
         const br       = Math.random();
@@ -575,7 +583,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     function moveEnemies() {
         enemies.forEach(e => {
-            const angle = Math.atan2(centerY - e.y, centerX - e.x);
+            const angle = Math.atan2(playerY - e.y, playerX - e.x);
             let speed   = state.perFrameDistance;
 
             if (e.behavior === 'zigzag') {
@@ -689,13 +697,13 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     function drawPlayerBarrel() {
-        const dx  = cursorPosX - centerX;
-        const dy  = cursorPosY - centerY;
+        const dx  = cursorPosX - playerX;
+        const dy  = cursorPosY - playerY;
         const mag = Math.sqrt(dx * dx + dy * dy);
         if (mag < 1) return;
         const angle = Math.atan2(dy, dx);
         ctx.save();
-        ctx.translate(centerX, centerY);
+        ctx.translate(playerX, playerY);
         ctx.rotate(angle);
         // Dark outline for depth
         ctx.fillStyle  = '#06141f';
@@ -825,7 +833,7 @@ window.addEventListener('DOMContentLoaded', function() {
                         if (c.hp <= 0) {
                             const slotIdx = getNextTurretSlot();
                             if (slotIdx !== -1) {
-                                const slot = TURRET_SLOTS[slotIdx];
+                                const slot = getSlotPositions()[slotIdx];
                                 miniTurrets.push({
                                     x: slot.x, y: slot.y,
                                     targetX: slot.x, targetY: slot.y,
@@ -913,8 +921,8 @@ window.addEventListener('DOMContentLoaded', function() {
         if (muzzleFlashFrames <= 0) return;
         const alpha = muzzleFlashFrames / 4;
         muzzleFlashFrames--;
-        const bx = centerX + Math.cos(muzzleFlashAngle) * 26;
-        const by = centerY + Math.sin(muzzleFlashAngle) * 26;
+        const bx = playerX + Math.cos(muzzleFlashAngle) * 26;
+        const by = playerY + Math.sin(muzzleFlashAngle) * 26;
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.shadowColor = '#ffdd44'; ctx.shadowBlur = 22;
@@ -939,13 +947,13 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // --- Layer 1: Fresnel fill (transparent center, opaque rim like real glass) ---
         ctx.save();
-        const fresnelGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, R);
+        const fresnelGrad = ctx.createRadialGradient(playerX, playerY, 0, playerX, playerY, R);
         fresnelGrad.addColorStop(0,    'rgba(180,230,255,0.00)');
         fresnelGrad.addColorStop(0.60, 'rgba(120,190,255,0.04)');
         fresnelGrad.addColorStop(0.85, 'rgba(100,170,240,0.12)');
         fresnelGrad.addColorStop(1,    'rgba(80,150,230,0.26)');
         ctx.beginPath();
-        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
+        ctx.arc(playerX, playerY, R, 0, Math.PI * 2);
         ctx.fillStyle = fresnelGrad;
         ctx.fill();
         ctx.restore();
@@ -953,7 +961,7 @@ window.addEventListener('DOMContentLoaded', function() {
         // --- Layer 2: Hex grid + lighting, clipped to dome ---
         ctx.save();
         ctx.beginPath();
-        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
+        ctx.arc(playerX, playerY, R, 0, Math.PI * 2);
         ctx.clip();
 
         // Hex grid — dome-projected (hexes shrink toward edge, simulating curved surface)
@@ -972,7 +980,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 const cosT     = Math.max(0.18, Math.cos(theta)); // min so edge hexes stay visible
                 const phi      = dist > 0.5 ? Math.atan2(dy, dx) : 0;
                 const cosPhi   = Math.cos(phi), sinPhi = Math.sin(phi);
-                const hx = centerX + dx, hy = centerY + dy;
+                const hx = playerX + dx, hy = playerY + dy;
                 for (let v = 0; v < 6; v++) {
                     const a  = (Math.PI / 3) * v;
                     const vx = hexR * Math.cos(a), vy = hexR * Math.sin(a);
@@ -992,34 +1000,34 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.stroke();
 
         // Bottom-half interior shadow (dome curves away from light source)
-        const bottomShadow = ctx.createLinearGradient(centerX, centerY - R * 0.1, centerX, centerY + R);
+        const bottomShadow = ctx.createLinearGradient(playerX, playerY - R * 0.1, playerX, playerY + R);
         bottomShadow.addColorStop(0, 'rgba(0,10,30,0)');
         bottomShadow.addColorStop(1, 'rgba(0,15,45,0.35)');
         ctx.fillStyle = bottomShadow;
-        ctx.fillRect(centerX - R, centerY - R * 0.1, R * 2, R * 1.1);
+        ctx.fillRect(playerX - R, playerY - R * 0.1, R * 2, R * 1.1);
 
         // Broad soft specular (convex dome top-left highlight)
-        const spec1 = ctx.createRadialGradient(centerX - 16, centerY - 20, 0, centerX - 16, centerY - 20, 62);
+        const spec1 = ctx.createRadialGradient(playerX - 16, playerY - 20, 0, playerX - 16, playerY - 20, 62);
         spec1.addColorStop(0,   'rgba(255,255,255,0.30)');
         spec1.addColorStop(0.5, 'rgba(255,255,255,0.07)');
         spec1.addColorStop(1,   'rgba(255,255,255,0)');
         ctx.fillStyle = spec1;
-        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
+        ctx.fillRect(playerX - R, playerY - R, R * 2, R * 2);
 
         // Tight primary reflection dot
-        const spec2 = ctx.createRadialGradient(centerX - 30, centerY - 36, 0, centerX - 30, centerY - 36, 15);
+        const spec2 = ctx.createRadialGradient(playerX - 30, playerY - 36, 0, playerX - 30, playerY - 36, 15);
         spec2.addColorStop(0,   'rgba(255,255,255,0.80)');
         spec2.addColorStop(0.5, 'rgba(255,255,255,0.22)');
         spec2.addColorStop(1,   'rgba(255,255,255,0)');
         ctx.fillStyle = spec2;
-        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
+        ctx.fillRect(playerX - R, playerY - R, R * 2, R * 2);
 
         ctx.restore(); // end clip
 
         // --- Layer 3: Subtle rim ---
         ctx.save();
         ctx.beginPath();
-        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
+        ctx.arc(playerX, playerY, R, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(160,220,255,0.32)';
         ctx.shadowColor  = 'rgba(120,200,255,0.40)';
         ctx.shadowBlur   = 8;
@@ -1048,7 +1056,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.lineWidth   = 7 * taper * alpha;
                 ctx.strokeStyle = `rgba(140,210,255,${alpha * taper})`;
                 ctx.beginPath();
-                ctx.arc(centerX, centerY, R, aStart, aEnd);
+                ctx.arc(playerX, playerY, R, aStart, aEnd);
                 ctx.stroke();
             }
             ctx.restore();
@@ -1056,10 +1064,10 @@ window.addEventListener('DOMContentLoaded', function() {
             // Ripple rings expanding inward from impact point, clipped to bubble
             ctx.save();
             ctx.beginPath();
-            ctx.arc(centerX, centerY, R - 0.5, 0, Math.PI * 2);
+            ctx.arc(playerX, playerY, R - 0.5, 0, Math.PI * 2);
             ctx.clip();
-            const ix = centerX + Math.cos(f.angle) * R;
-            const iy = centerY + Math.sin(f.angle) * R;
+            const ix = playerX + Math.cos(f.angle) * R;
+            const iy = playerY + Math.sin(f.angle) * R;
             for (let j = 0; j < 3; j++) {
                 const rp = progress - j * 0.22;
                 if (rp <= 0 || rp >= 1.1) continue;
@@ -1107,7 +1115,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
         // Background ring — always faint
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, fullSweep);
+        ctx.arc(playerX, playerY, radius, 0, fullSweep);
         ctx.strokeStyle = 'rgba(255,255,255,0.07)';
         ctx.lineWidth   = 1.5;
         ctx.stroke();
@@ -1117,7 +1125,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const inZone   = progress >= VENT_ZONE_LO && progress <= VENT_ZONE_HI;
             // Highlighted vent zone (fixed arc band)
             ctx.beginPath();
-            ctx.arc(centerX, centerY, radius,
+            ctx.arc(playerX, playerY, radius,
                 startAngle + fullSweep * VENT_ZONE_LO,
                 startAngle + fullSweep * VENT_ZONE_HI);
             ctx.strokeStyle = 'rgba(255,220,0,0.72)';
@@ -1126,7 +1134,7 @@ window.addEventListener('DOMContentLoaded', function() {
             // Countdown arc (shrinks as jam clears)
             if (progress > 0) {
                 ctx.beginPath();
-                ctx.arc(centerX, centerY, radius, startAngle, startAngle + fullSweep * progress);
+                ctx.arc(playerX, playerY, radius, startAngle, startAngle + fullSweep * progress);
                 ctx.strokeStyle = inZone ? '#ffcc00' : '#ff3300';
                 ctx.shadowColor = inZone ? '#ffcc00' : '#ff3300';
                 ctx.shadowBlur  = inZone ? 10 : 4;
@@ -1137,12 +1145,12 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.font       = '700 8px "Exo 2", sans-serif';
             ctx.textAlign  = 'center';
             ctx.fillStyle  = inZone ? '#ffcc00' : 'rgba(255,80,0,0.8)';
-            ctx.fillText(inZone ? '▶ VENT [R]' : 'JAMMED', centerX, centerY + 55);
+            ctx.fillText(inZone ? '▶ VENT [R]' : 'JAMMED', playerX, playerY + 55);
         } else {
             // Normal heat arc — orange→red as it fills
             const g = Math.round(200 - heatRatio * 200);
             ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, startAngle, startAngle + fullSweep * heatRatio);
+            ctx.arc(playerX, playerY, radius, startAngle, startAngle + fullSweep * heatRatio);
             ctx.strokeStyle = `rgb(255,${g},0)`;
             ctx.shadowColor = `rgb(255,${g},0)`;
             ctx.shadowBlur  = heatRatio > 0.65 ? 7 : 2;
@@ -1169,7 +1177,7 @@ window.addEventListener('DOMContentLoaded', function() {
             x = 60 + Math.random() * (canvasWidth  - 120);
             y = 60 + Math.random() * (canvasHeight - 120);
             attempts++;
-        } while (Math.hypot(x - centerX, y - centerY) < 140 && attempts < 25);
+        } while (Math.hypot(x - playerX, y - playerY) < 140 && attempts < 25);
         upgradeCrates.push({ x, y, hp: CRATE_HP, maxHp: CRATE_HP, hitTimer: 0 });
     }
 
@@ -1405,34 +1413,34 @@ function spawnExplosion(x, y) {
 
         // Muzzle flash at barrel tip
         const fireInterval = setInterval(function() {
-            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
-            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
-            const dx = cursorPosX - centerX, dy = cursorPosY - centerY;
+            turretBarrel(playerX, playerY, cursorPosX, cursorPosY, 30, 'white', 5);
+            turretBarrel(playerX, playerY, cursorPosX, cursorPosY, 25, 'black', 5);
+            const dx = cursorPosX - playerX, dy = cursorPosY - playerY;
             const mag = Math.sqrt(dx * dx + dy * dy);
             if (mag > 0) {
                 const s = Math.min(25, mag) / mag;
-                drawMuzzleFlash(centerX + dx * s, centerY + dy * s);
+                drawMuzzleFlash(playerX + dx * s, playerY + dy * s);
             }
         }, 10);
         setTimeout(() => clearInterval(fireInterval), 50);
 
         // Apply spread — random angular offset within ±spread/2
-        const baseAngle = Math.atan2(ty - centerY, tx - centerX);
+        const baseAngle = Math.atan2(ty - playerY, tx - playerX);
         const spreadOffset = (Math.random() - 0.5) * state.spread;
         const fireAngle = baseAngle + spreadOffset;
         const fireDx = Math.cos(fireAngle), fireDy = Math.sin(fireAngle);
-        const edge = rayToEdge(centerX, centerY, centerX + fireDx, centerY + fireDy);
+        const edge = rayToEdge(playerX, playerY, playerX + fireDx, playerY + fireDy);
 
         playGatlingSound();
         muzzleFlashAngle = fireAngle;
         muzzleFlashFrames = 4;
-        gatlingBullets.push({ x1: centerX, y1: centerY, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: state.bulletDamage });
+        gatlingBullets.push({ x1: playerX, y1: playerY, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: state.bulletDamage });
         // Eject shell casing
         const casingAngle = fireAngle - Math.PI / 2 + (Math.random() - 0.5) * 1.4;
         const casingSpeed = 2.5 + Math.random() * 2.5;
         shellCasings.push({
-            x: centerX + Math.cos(casingAngle) * 8,
-            y: centerY + Math.sin(casingAngle) * 8,
+            x: playerX + Math.cos(casingAngle) * 8,
+            y: playerY + Math.sin(casingAngle) * 8,
             vx: Math.cos(casingAngle) * casingSpeed,
             vy: Math.sin(casingAngle) * casingSpeed,
             angle: casingAngle,
@@ -1450,12 +1458,12 @@ function spawnExplosion(x, y) {
     // --- Player Damage ---
     function hitDetect() {
         enemies = enemies.filter(e => {
-            if (Math.hypot(e.x - centerX, e.y - centerY) < 80) {
+            if (Math.hypot(e.x - playerX, e.y - playerY) < 80) {
                 takeHealth();
                 playBoundaryHitSound();
-                const hitAngle = Math.atan2(e.y - centerY, e.x - centerX);
-                const impactX  = centerX + Math.cos(hitAngle) * 76;
-                const impactY  = centerY + Math.sin(hitAngle) * 76;
+                const hitAngle = Math.atan2(e.y - playerY, e.x - playerX);
+                const impactX  = playerX + Math.cos(hitAngle) * 76;
+                const impactY  = playerY + Math.sin(hitAngle) * 76;
                 spawnBoundaryHit(impactX, impactY);
                 circleHitFlashes.push({ angle: hitAngle, life: 18 });
                 return false;
@@ -1499,8 +1507,7 @@ function spawnExplosion(x, y) {
 
     function populateUpgrades() {
         weaponShop.innerHTML = '';
-        const allUpgrades = [...UPGRADES_BASE];
-        allUpgrades.push(state.autoFire ? UPGRADE_FIRERATE : UPGRADE_AUTOFIRE);
+        const allUpgrades = [...UPGRADES];
         if (miniTurrets.length > 0) {
             allUpgrades.push(
                 {
@@ -1550,7 +1557,28 @@ function spawnExplosion(x, y) {
     }
 
     // --- Game Loop ---
+    function updatePlayerPosition() {
+        let dx = 0, dy = 0;
+        if (keysHeld.w) dy -= PLAYER_SPEED;
+        if (keysHeld.s) dy += PLAYER_SPEED;
+        if (keysHeld.a) dx -= PLAYER_SPEED;
+        if (keysHeld.d) dx += PLAYER_SPEED;
+        if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; } // normalise diagonal
+        const margin = 50;
+        playerX = Math.max(margin, Math.min(canvasWidth  - margin, playerX + dx));
+        playerY = Math.max(margin, Math.min(canvasHeight - margin, playerY + dy));
+        // Update mini turret targets to follow player
+        const slots = getSlotPositions();
+        miniTurrets.forEach(t => {
+            if (t.slotIdx !== undefined) {
+                t.targetX = slots[t.slotIdx].x;
+                t.targetY = slots[t.slotIdx].y;
+            }
+        });
+    }
+
     function gameLoop() {
+        updatePlayerPosition();
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         renderTurretArea();
 
@@ -1562,21 +1590,21 @@ function spawnExplosion(x, y) {
         // Scale: shrink down to 0.72 when jammed
         let turretScale = isJammed ? 0.72 : (1 - heatRatio * 0.08);
         ctx.save();
-        ctx.translate(centerX, centerY);
+        ctx.translate(playerX, playerY);
         ctx.scale(turretScale, turretScale);
-        ctx.translate(-centerX, -centerY);
+        ctx.translate(-playerX, -playerY);
         if (!jamBlink) {
             if (heatRatio > 0.05) {
                 const glowRadius = 36 + heatRatio * 22;
                 const glowAlpha  = heatRatio * (isJammed ? 0.85 : 0.55);
-                const grad = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, glowRadius);
+                const grad = ctx.createRadialGradient(playerX, playerY, 10, playerX, playerY, glowRadius);
                 const r = Math.round(255);
                 const g = Math.round(isJammed ? 0 : 180 - heatRatio * 180);
                 grad.addColorStop(0, `rgba(${r},${g},0,${glowAlpha})`);
                 grad.addColorStop(1, 'rgba(255,0,0,0)');
                 ctx.fillStyle = grad;
                 ctx.beginPath();
-                ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
+                ctx.arc(playerX, playerY, glowRadius, 0, Math.PI * 2);
                 ctx.fill();
             }
             playerTurret.render();
@@ -1593,7 +1621,7 @@ function spawnExplosion(x, y) {
         renderShellCasings();
         renderGatlingMuzzleFlash();
         renderParticles();
-        if (mouseIsDown && state.autoFire) fireAction();
+        if (mouseIsDown) fireAction();
         hitDetect();
         checkLevelUp();
 
@@ -1666,8 +1694,9 @@ function spawnExplosion(x, y) {
             streak: 0,
             streakFrames: 0,
             lastVented: 0,
-            autoFire: false,
         };
+        playerX = centerX; playerY = centerY;
+        keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
         miniTurrets = []; upgradeCrates = []; circleHitFlashes = [];
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
