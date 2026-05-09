@@ -371,7 +371,8 @@ window.addEventListener('DOMContentLoaded', function() {
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS = [0.45, 0.60, 0.80, 1.05, 1.40, 1.70, 2.00, 2.35];
+    const LEVEL_SPEEDS    = [0.45, 0.60, 0.80, 1.05, 1.30, 1.50, 1.60, 1.70];
+    const ENEMY_MAX_SPEED = 1.70;
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -590,9 +591,15 @@ window.addEventListener('DOMContentLoaded', function() {
     function getEnemyHp() {
         const def = getLevelDef();
         const r = Math.random();
-        if (r < def.eliteChance) return 6;
-        if (r < def.eliteChance + def.toughChance) return 4;
-        return 3;
+        let hp;
+        if (r < def.eliteChance)                     hp = 6;
+        else if (r < def.eliteChance + def.toughChance) hp = 4;
+        else                                          hp = 3;
+        // Beyond base levels: enemies gain HP instead of speed
+        if (state.level > LEVELS.length) {
+            hp += Math.floor((state.level - LEVELS.length) / 3);
+        }
+        return hp;
     }
 
     function getEnemyColor(hp) {
@@ -1009,9 +1016,9 @@ window.addEventListener('DOMContentLoaded', function() {
             remaining.push(b);
 
             // Ground glow — cheap radial gradient, scales with damage upgrades
-            const upgradeLevel = Math.max(0, Math.round((b.damage - 0.75) / 0.25));
-            const glowR = 15 + upgradeLevel * 18;
-            const glowA = Math.min(0.55, 0.22 + upgradeLevel * 0.18);
+            const upgradeLevel = Math.min(3, Math.max(0, Math.round((b.damage - 0.45) / 0.5)));
+            const glowR = Math.min(55, 15 + upgradeLevel * 13);
+            const glowA = Math.min(0.50, 0.18 + upgradeLevel * 0.11);
             const grd   = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
             grd.addColorStop(0,   `rgba(255,220,100,${glowA})`);
             grd.addColorStop(0.4, `rgba(255,140,20,${glowA * 0.55})`);
@@ -1793,7 +1800,11 @@ function spawnExplosion(x, y) {
     }
 
     function takeHealth() {
-        state.health = Math.max(0, state.health - 5);
+        // Beyond base levels enemies deal more damage per hit, capped at 20%
+        const bonus = state.level > LEVELS.length
+            ? Math.min(15, (state.level - LEVELS.length) * 1.5)
+            : 0;
+        state.health = Math.max(0, state.health - (5 + bonus));
         healthBar.style.width = `${state.health}%`;
     }
 
@@ -2054,7 +2065,7 @@ function spawnExplosion(x, y) {
 
     function startIntervals() {
         const def = getLevelDef();
-        state.perFrameDistance = LEVEL_SPEEDS[Math.min(state.level - 1, LEVEL_SPEEDS.length - 1)];
+        state.perFrameDistance = Math.min(ENEMY_MAX_SPEED, LEVEL_SPEEDS[Math.min(state.level - 1, LEVEL_SPEEDS.length - 1)]);
         gameLoopInt = setInterval(gameLoop, 30);
         spawnInt    = setInterval(spawnEnemy, def.spawnInterval);
         moveInt     = setInterval(moveEnemies, 20);
