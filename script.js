@@ -28,12 +28,12 @@ window.addEventListener('DOMContentLoaded', function() {
     const shopCredits      = document.querySelector('#shopcredits');
     const weaponShop       = document.querySelector('#weaponshop');
     const titleEl          = document.querySelector('#gametitle');
-    const heatBar          = document.querySelector('#heatbar');
     const streakDisplay    = document.querySelector('#streak-display');
     const controlsLegend   = document.querySelector('#controls-legend');
     const controlsOpen     = document.querySelector('#controls-open');
     const controlsToggle   = document.querySelector('#controls-toggle');
     const ctx              = gameCanvas.getContext('2d');
+    const miniturretCountEl = document.querySelector('#miniturret-count');
 
     // --- Audio ---
     let audioCtx = null;
@@ -300,6 +300,35 @@ window.addEventListener('DOMContentLoaded', function() {
         ring.start(t); ring.stop(t + 0.35);
     }
 
+    function playBoundaryHitSound() {
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        // Low impact thump
+        const osc  = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.connect(gain); gain.connect(ac.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(130, t);
+        osc.frequency.exponentialRampToValueAtTime(38, t + 0.18);
+        gain.gain.setValueAtTime(0.65, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.start(t); osc.stop(t + 0.22);
+        // Sharp brittle crack
+        const len = Math.floor(ac.sampleRate * 0.055);
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const d   = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src   = ac.createBufferSource();
+        src.buffer  = buf;
+        const hp    = ac.createBiquadFilter();
+        hp.type     = 'highpass'; hp.frequency.value = 1200;
+        const nGain = ac.createGain();
+        src.connect(hp); hp.connect(nGain); nGain.connect(ac.destination);
+        nGain.gain.setValueAtTime(0.35, t);
+        nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+        src.start(t);
+    }
+
     // --- Canvas Setup ---
     gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
     gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
@@ -320,7 +349,7 @@ window.addEventListener('DOMContentLoaded', function() {
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS = [0.15, 0.28, 0.45, 0.65, 0.9];
+    const LEVEL_SPEEDS = [0.28, 0.38, 0.52, 0.70, 0.95];
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -331,14 +360,42 @@ window.addEventListener('DOMContentLoaded', function() {
         'Final wave. Maximum threat level. Hold the line, Cadet.',
     ];
 
-    const GATLING_BASE = { cooldown: 65, damage: 0.75, spread: 0.12 };
+    const GATLING_BASE = { cooldown: 110, damage: 0.75, spread: 0.07 };
+
+    const MINI_TURRET_MAX      = 4;
+    const MINI_TURRET_RANGE    = 200;
+    const MINI_TURRET_COOLDOWN = 900;
+    const MINI_TURRET_DAMAGE   = 0.5;
+    const MINI_TURRET_HP       = 40;
+    const CRATE_HP             = 8;
+
+    // Fixed deployment slots — square around the player turret
+    const SLOT_OFFSET  = 85;
+    const TURRET_SLOTS = [
+        { x: centerX - SLOT_OFFSET, y: centerY - SLOT_OFFSET },
+        { x: centerX + SLOT_OFFSET, y: centerY - SLOT_OFFSET },
+        { x: centerX + SLOT_OFFSET, y: centerY + SLOT_OFFSET },
+        { x: centerX - SLOT_OFFSET, y: centerY + SLOT_OFFSET },
+    ];
 
     // Upgrades offered at each level-up — player picks one
-    const UPGRADES = [
-        { key: 'accuracy',  name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',         apply: s => { s.spread   = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',    name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.25 damage per bullet.',  apply: s => { s.bulletDamage += 0.25; } },
-        { key: 'firerate',  name: 'FIRE RATE', desc: 'Faster cyclic rate. Reduces cooldown by 8ms.',     apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 8); } },
+    // Base upgrades always available
+    const UPGRADES_BASE = [
+        { key: 'accuracy', name: 'ACCURACY',  desc: 'Tighter grouping. Reduces bullet spread.',        apply: s => { s.spread       = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',   name: 'DAMAGE',    desc: 'Harder hitting rounds. +0.25 damage per bullet.', apply: s => { s.bulletDamage += 0.25; } },
     ];
+    // TODO: Raise level requirement (e.g. only appear from level 3+) once balance is confirmed
+    const UPGRADE_AUTOFIRE = {
+        key: 'autofire', name: 'AUTO FIRE',
+        desc: 'Unlock full-auto. Hold mouse button to fire continuously.',
+        apply: s => { s.autoFire = true; },
+    };
+    // Only offered after AUTO FIRE is purchased
+    const UPGRADE_FIRERATE = {
+        key: 'firerate', name: 'FIRE RATE',
+        desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',
+        apply: s => { s.fireCooldown = Math.max(30, s.fireCooldown - 10); },
+    };
 
     // --- Game State ---
     let state = {};
@@ -349,9 +406,15 @@ window.addEventListener('DOMContentLoaded', function() {
     let muzzleFlashFrames = 0;
     let muzzleFlashAngle = 0;
 
+    let miniTurrets       = [];
+    let upgradeCrates     = [];
+    let circleHitFlashes  = [];
+
     let gameLoopInt = null;
     let spawnInt    = null;
     let moveInt     = null;
+    let crateInt            = null;
+    let crateSpawnTimeout   = null;
 
     let cursorPosX = centerX;
     let cursorPosY = 0;
@@ -361,7 +424,75 @@ window.addEventListener('DOMContentLoaded', function() {
     class Player {
         constructor(x, y, width, height) {
             this.x = x; this.y = y; this.width = width; this.height = height;
-            this.render = () => ctx.drawImage(turret, this.x, this.y, this.width, this.height);
+            this.render = () => {
+                ctx.save();
+                ctx.translate(centerX, centerY);
+
+                // Outer hex ring — platform base
+                ctx.beginPath();
+                for (let v = 0; v < 6; v++) {
+                    const a = (Math.PI / 3) * v + Math.PI / 6;
+                    v === 0 ? ctx.moveTo(Math.cos(a) * 22, Math.sin(a) * 22)
+                            : ctx.lineTo(Math.cos(a) * 22, Math.sin(a) * 22);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = 'rgba(155,180,200,0.65)';
+                ctx.lineWidth   = 1.5;
+                ctx.shadowColor = 'rgba(130,160,185,0.70)';
+                ctx.shadowBlur  = 7;
+                ctx.stroke();
+
+                // Inner hex ring — detail layer
+                ctx.beginPath();
+                for (let v = 0; v < 6; v++) {
+                    const a = (Math.PI / 3) * v;
+                    v === 0 ? ctx.moveTo(Math.cos(a) * 15, Math.sin(a) * 15)
+                            : ctx.lineTo(Math.cos(a) * 15, Math.sin(a) * 15);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = 'rgba(100,128,150,0.35)';
+                ctx.lineWidth   = 1;
+                ctx.shadowBlur  = 0;
+                ctx.stroke();
+
+                // Body — gunmetal with steel border + metallic gradient
+                ctx.beginPath();
+                ctx.arc(0, 0, 13, 0, Math.PI * 2);
+                const bodyGrad = ctx.createRadialGradient(-4, -5, 0, 0, 0, 13);
+                bodyGrad.addColorStop(0,   '#2a3f52');
+                bodyGrad.addColorStop(0.6, '#152030');
+                bodyGrad.addColorStop(1,   '#0e1820');
+                ctx.fillStyle  = bodyGrad;
+                ctx.shadowBlur = 0;
+                ctx.fill();
+                ctx.strokeStyle = '#607888';
+                ctx.lineWidth   = 1.5;
+                ctx.shadowColor = 'rgba(120,155,180,0.75)';
+                ctx.shadowBlur  = 5;
+                ctx.stroke();
+
+                // Inner detail ring
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(88,115,135,0.45)';
+                ctx.lineWidth   = 0.8;
+                ctx.shadowBlur  = 0;
+                ctx.stroke();
+
+                // Amber targeting core (optic / power source)
+                const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 5);
+                core.addColorStop(0,   'rgba(220,158,40,1.0)');
+                core.addColorStop(0.5, 'rgba(200,130,25,0.6)');
+                core.addColorStop(1,   'rgba(180,100,10,0)');
+                ctx.fillStyle  = core;
+                ctx.shadowColor = '#d49830';
+                ctx.shadowBlur  = 14;
+                ctx.beginPath();
+                ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            };
         }
     }
     const playerTurret = new Player(centerX - 25, centerY - 25, 50, 50);
@@ -371,9 +502,16 @@ window.addEventListener('DOMContentLoaded', function() {
         cursorPosX = e.clientX - gameCanvas.offsetLeft;
         cursorPosY = e.clientY - gameCanvas.offsetTop;
     });
-    gameCanvas.addEventListener('mousedown', () => { mouseIsDown = true; fireAction(); });
-    gameCanvas.addEventListener('mouseup', () => { mouseIsDown = false; });
+    gameCanvas.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        mouseIsDown = true;
+        if (state.jammed) { ventOverheat(); } else { fireAction(); }
+    });
+    gameCanvas.addEventListener('mouseup', e => { if (e.button === 0) mouseIsDown = false; });
     gameCanvas.addEventListener('mouseleave', () => { mouseIsDown = false; });
+    window.addEventListener('keydown', e => {
+        if (e.key === 'r' || e.key === 'R') ventOverheat();
+    });
 
 
 
@@ -418,28 +556,119 @@ window.addEventListener('DOMContentLoaded', function() {
         do {
             x = Math.floor(Math.random() * canvasWidth) - 15;
             y = Math.floor(Math.random() * canvasHeight) - 15;
-        } while (Math.hypot(x - centerX, y - centerY) < 100);
+        } while (Math.hypot(x - centerX, y - centerY) < 160);
         const hp = getEnemyHp();
-        enemies.push({ x, y, hp, maxHp: hp, hitTimer: 0 });
+        let behavior = 'normal';
+        const br       = Math.random();
+        const zipChance = Math.min(0.18, state.level * 0.04);
+        const zigChance = Math.min(0.35, state.level * 0.09);
+        if      (br < zipChance)             behavior = 'zipper';
+        else if (br < zipChance + zigChance) behavior = 'zigzag';
+        enemies.push({
+            x, y, hp, maxHp: hp, hitTimer: 0,
+            behavior,
+            zigzagPhase: Math.random() * Math.PI * 2,
+            zipping: false, zipDuration: 0,
+            zipCooldown: Math.floor(Math.random() * 25),
+        });
     }
 
     function moveEnemies() {
         enemies.forEach(e => {
             const angle = Math.atan2(centerY - e.y, centerX - e.x);
-            e.x += Math.cos(angle) * state.perFrameDistance;
-            e.y += Math.sin(angle) * state.perFrameDistance;
+            let speed   = state.perFrameDistance;
+
+            if (e.behavior === 'zigzag') {
+                e.zigzagPhase += 0.18;
+                const perp   = angle + Math.PI / 2;
+                const zigStr = 2.2 + state.level * 0.3;
+                e.x += Math.cos(angle) * speed + Math.cos(perp) * Math.sin(e.zigzagPhase) * zigStr;
+                e.y += Math.sin(angle) * speed + Math.sin(perp) * Math.sin(e.zigzagPhase) * zigStr;
+            } else if (e.behavior === 'zipper') {
+                if (e.zipping) {
+                    e.zipDuration--;
+                    if (e.zipDuration <= 0) {
+                        e.zipping     = false;
+                        e.zipCooldown = 35 + Math.floor(Math.random() * 25);
+                    }
+                    speed *= 3.8;
+                } else {
+                    e.zipCooldown--;
+                    if (e.zipCooldown <= 0 && Math.random() < 0.06) {
+                        e.zipping     = true;
+                        e.zipDuration = 16 + Math.floor(Math.random() * 10);
+                    }
+                }
+                e.x += Math.cos(angle) * speed;
+                e.y += Math.sin(angle) * speed;
+            } else {
+                e.x += Math.cos(angle) * speed;
+                e.y += Math.sin(angle) * speed;
+            }
         });
     }
 
     function renderEnemies() {
         enemies.forEach(e => {
             if (e.hitTimer > 0) e.hitTimer--;
-            // Flash white on hit, otherwise color by HP
-            const ratio = e.hp / e.maxHp;
+            const ratio      = e.hp / e.maxHp;
             const flashColor = ratio > 0.66 ? '#ff8844' : ratio > 0.33 ? '#ffee44' : '#aaffee';
-            ctx.fillStyle = e.hitTimer > 0 ? flashColor : getEnemyColor(e.hp);
-            ctx.fillRect(e.x - 7, e.y - 7, 11, 11);
-            // HP bar above multi-HP enemies
+            const col        = e.hitTimer > 0 ? flashColor : getEnemyColor(e.hp);
+
+            // Sample trail every 3rd render frame
+            e.trailTick = ((e.trailTick || 0) + 1);
+            if (e.trailTick % 3 === 0) {
+                if (!e.trail) e.trail = [];
+                e.trail.unshift({ x: e.x, y: e.y });
+                if (e.trail.length > 16) e.trail.pop();
+            }
+
+            // Fading trail — wireframe front squares
+            if (e.trail && e.trail.length > 0) {
+                const n = e.trail.length;
+                ctx.strokeStyle = col;
+                ctx.lineWidth   = 0.7;
+                e.trail.forEach((pos, i) => {
+                    ctx.globalAlpha = (1 - (i + 1) / (n + 1)) * 0.40;
+                    ctx.strokeRect(pos.x - 5, pos.y - 5, 10, 10);
+                });
+                ctx.globalAlpha = 1;
+            }
+
+            // Wireframe cube — 9 visible edges (front face + top + right faces)
+            const w = 10, h = 10, d = 4;
+            const fx = e.x - w / 2, fy = e.y - h / 2;
+            const edgeCol = (e.behavior === 'zipper' && e.zipping) ? '#ffffff' : col;
+
+            ctx.save();
+            ctx.strokeStyle = edgeCol;
+            ctx.lineWidth   = 1.2;
+            ctx.lineJoin    = 'round';
+            ctx.lineCap     = 'round';
+
+            if (e.behavior === 'zigzag') {
+                ctx.shadowColor = '#00ffaa'; ctx.shadowBlur = 18;
+            } else if (e.behavior === 'zipper' && e.zipping) {
+                ctx.shadowColor = '#00ffee'; ctx.shadowBlur = 30;
+            } else if (e.behavior === 'zipper') {
+                ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 12;
+            }
+
+            // Front face
+            ctx.strokeRect(fx, fy, w, h);
+
+            // Top + right face edges (all in one path for efficiency)
+            ctx.beginPath();
+            ctx.moveTo(fx,         fy);     ctx.lineTo(fx + d,     fy - d);      // top-left depth
+            ctx.moveTo(fx + w,     fy);     ctx.lineTo(fx + w + d, fy - d);      // top-right depth
+            ctx.moveTo(fx + d,     fy - d); ctx.lineTo(fx + w + d, fy - d);      // top back edge
+            ctx.moveTo(fx + w,     fy + h); ctx.lineTo(fx + w + d, fy + h - d);  // bottom-right depth
+            ctx.moveTo(fx + w + d, fy - d); ctx.lineTo(fx + w + d, fy + h - d);  // right back vertical
+            ctx.stroke();
+
+            ctx.restore();
+
+            // HP bar
             if (e.maxHp > 1) {
                 const bw = 16, bh = 3, bx = e.x - 8, by = e.y - 14;
                 ctx.fillStyle = '#222';
@@ -457,6 +686,35 @@ window.addEventListener('DOMContentLoaded', function() {
         const scale = mag > maxLen ? maxLen / mag : 1;
         ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + vx * scale, y1 + vy * scale); ctx.stroke();
+    }
+
+    function drawPlayerBarrel() {
+        const dx  = cursorPosX - centerX;
+        const dy  = cursorPosY - centerY;
+        const mag = Math.sqrt(dx * dx + dy * dy);
+        if (mag < 1) return;
+        const angle = Math.atan2(dy, dx);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(angle);
+        // Dark outline for depth
+        ctx.fillStyle  = '#06141f';
+        ctx.fillRect(11, -4.5, 19, 9);
+        // Main barrel body — dark steel
+        ctx.fillStyle   = '#304555';
+        ctx.shadowColor = 'rgba(110,145,170,0.5)';
+        ctx.shadowBlur  = 4;
+        ctx.fillRect(12, -3.5, 17, 7);
+        // Top specular — chrome shine
+        ctx.fillStyle  = 'rgba(185,215,235,0.45)';
+        ctx.shadowBlur = 0;
+        ctx.fillRect(12, -3.5, 17, 2);
+        // Muzzle tip — bright steel end
+        ctx.fillStyle   = '#90b0c5';
+        ctx.shadowColor = 'rgba(200,225,240,0.8)';
+        ctx.shadowBlur  = 8;
+        ctx.fillRect(26, -4, 4, 8);
+        ctx.restore();
     }
 
     function drawMuzzleFlash(x, y) {
@@ -549,7 +807,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const py = b.y1 + (b.y2 - b.y1) * prevProgress;
             const cx = b.x1 + (b.x2 - b.x1) * b.progress;
             const cy = b.y1 + (b.y2 - b.y1) * b.progress;
-            // Segment hit detection
+            // Segment hit detection — enemies
             let hit = false;
             enemies = enemies.filter(e => {
                 if (!hit && rayHitsEnemy(e, px, py, cx, cy)) {
@@ -557,19 +815,66 @@ window.addEventListener('DOMContentLoaded', function() {
                 }
                 return true;
             });
+            // Segment hit detection — upgrade crates
+            if (!hit) {
+                upgradeCrates = upgradeCrates.filter(c => {
+                    if (!hit && rayHitsEnemy(c, px, py, cx, cy)) {
+                        hit = true;
+                        c.hp -= b.damage;
+                        c.hitTimer = 6;
+                        if (c.hp <= 0) {
+                            const slotIdx = getNextTurretSlot();
+                            if (slotIdx !== -1) {
+                                const slot = TURRET_SLOTS[slotIdx];
+                                miniTurrets.push({
+                                    x: slot.x, y: slot.y,
+                                    targetX: slot.x, targetY: slot.y,
+                                    slotIdx,
+                                    hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
+                                    range: MINI_TURRET_RANGE,
+                                    fireCooldown: MINI_TURRET_COOLDOWN,
+                                    damage: MINI_TURRET_DAMAGE,
+                                    lastFired: 0,
+                                    lastAngle: 0,
+                                });
+                            }
+                            spawnExplosion(c.x, c.y);
+                            return false;
+                        }
+                        return true;
+                    }
+                    return true;
+                });
+            }
             if (hit) return;
             b.trail.unshift({ x: cx, y: cy });
-            if (b.trail.length > 7) b.trail.pop();
+            if (b.trail.length > 12) b.trail.pop();
             remaining.push(b);
-            // Draw: tapered gradient trail — wide+bright at tip, thin+transparent at tail
+
+            // Ground glow — cheap radial gradient, scales with damage upgrades
+            const upgradeLevel = Math.max(0, Math.round((b.damage - 0.75) / 0.25));
+            const glowR = 15 + upgradeLevel * 18;
+            const glowA = Math.min(0.55, 0.22 + upgradeLevel * 0.18);
+            const grd   = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+            grd.addColorStop(0,   `rgba(255,220,100,${glowA})`);
+            grd.addColorStop(0.4, `rgba(255,140,20,${glowA * 0.55})`);
+            grd.addColorStop(1,   'rgba(255,60,0,0)');
+            ctx.save();
+            ctx.fillStyle = grd;
+            ctx.beginPath();
+            ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Yellow tracer trail
             ctx.save();
             ctx.lineCap = 'round';
             ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 8;
             const n = b.trail.length;
             for (let i = 0; i < n - 1; i++) {
-                const t = i / (n - 1); // 0=newest, 1=oldest
+                const t = i / (n - 1);
                 ctx.globalAlpha = (1 - t) * 0.85;
-                ctx.lineWidth = Math.max(0.3, (1 - t) * 1.8);
+                ctx.lineWidth   = Math.max(0.3, (1 - t) * 1.8);
                 ctx.strokeStyle = '#ffdd44';
                 ctx.beginPath();
                 ctx.moveTo(b.trail[i].x, b.trail[i].y);
@@ -581,6 +886,7 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.fillStyle = '#ffffff';
             ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
+
         });
         gatlingBullets = remaining;
     }
@@ -627,8 +933,355 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.restore();
     }
 
+    // --- Turret Area (spawn boundary + slot placeholders) ---
+    function renderTurretArea() {
+        const R = 80;
+
+        // --- Layer 1: Fresnel fill (transparent center, opaque rim like real glass) ---
+        ctx.save();
+        const fresnelGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, R);
+        fresnelGrad.addColorStop(0,    'rgba(180,230,255,0.00)');
+        fresnelGrad.addColorStop(0.60, 'rgba(120,190,255,0.04)');
+        fresnelGrad.addColorStop(0.85, 'rgba(100,170,240,0.12)');
+        fresnelGrad.addColorStop(1,    'rgba(80,150,230,0.26)');
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
+        ctx.fillStyle = fresnelGrad;
+        ctx.fill();
+        ctx.restore();
+
+        // --- Layer 2: Hex grid + lighting, clipped to dome ---
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Hex grid — dome-projected (hexes shrink toward edge, simulating curved surface)
+        const hexR = 12, hexH = Math.sqrt(3) * hexR, colW = hexR * 1.5;
+        ctx.beginPath();
+        for (let col = -8; col <= 8; col++) {
+            for (let row = -8; row <= 8; row++) {
+                const dx   = col * colW;
+                const dy   = row * hexH + (Math.abs(col) % 2 === 1 ? hexH / 2 : 0);
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > R + hexR) continue;
+                // Anisotropic dome projection: compress vertices in the RADIAL direction
+                // by cos(theta) (orthographic sphere view), leave tangential unchanged.
+                const normDist = Math.min(dist / R, 0.99);
+                const theta    = Math.asin(normDist);
+                const cosT     = Math.max(0.18, Math.cos(theta)); // min so edge hexes stay visible
+                const phi      = dist > 0.5 ? Math.atan2(dy, dx) : 0;
+                const cosPhi   = Math.cos(phi), sinPhi = Math.sin(phi);
+                const hx = centerX + dx, hy = centerY + dy;
+                for (let v = 0; v < 6; v++) {
+                    const a  = (Math.PI / 3) * v;
+                    const vx = hexR * Math.cos(a), vy = hexR * Math.sin(a);
+                    // Decompose vertex offset into radial + tangential components
+                    const rad = vx * cosPhi + vy * sinPhi;        // radial
+                    const tan = -vx * sinPhi + vy * cosPhi;       // tangential
+                    // Compress radial by cos(theta), tangential unchanged
+                    const px  = hx + rad * cosT * cosPhi - tan * sinPhi;
+                    const py  = hy + rad * cosT * sinPhi + tan * cosPhi;
+                    v === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+            }
+        }
+        ctx.strokeStyle = 'rgba(150,210,255,0.18)';
+        ctx.lineWidth   = 0.7;
+        ctx.stroke();
+
+        // Bottom-half interior shadow (dome curves away from light source)
+        const bottomShadow = ctx.createLinearGradient(centerX, centerY - R * 0.1, centerX, centerY + R);
+        bottomShadow.addColorStop(0, 'rgba(0,10,30,0)');
+        bottomShadow.addColorStop(1, 'rgba(0,15,45,0.35)');
+        ctx.fillStyle = bottomShadow;
+        ctx.fillRect(centerX - R, centerY - R * 0.1, R * 2, R * 1.1);
+
+        // Broad soft specular (convex dome top-left highlight)
+        const spec1 = ctx.createRadialGradient(centerX - 16, centerY - 20, 0, centerX - 16, centerY - 20, 62);
+        spec1.addColorStop(0,   'rgba(255,255,255,0.30)');
+        spec1.addColorStop(0.5, 'rgba(255,255,255,0.07)');
+        spec1.addColorStop(1,   'rgba(255,255,255,0)');
+        ctx.fillStyle = spec1;
+        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
+
+        // Tight primary reflection dot
+        const spec2 = ctx.createRadialGradient(centerX - 30, centerY - 36, 0, centerX - 30, centerY - 36, 15);
+        spec2.addColorStop(0,   'rgba(255,255,255,0.80)');
+        spec2.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+        spec2.addColorStop(1,   'rgba(255,255,255,0)');
+        ctx.fillStyle = spec2;
+        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
+
+        ctx.restore(); // end clip
+
+        // --- Layer 3: Subtle rim ---
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(160,220,255,0.32)';
+        ctx.shadowColor  = 'rgba(120,200,255,0.40)';
+        ctx.shadowBlur   = 8;
+        ctx.lineWidth    = 1;
+        ctx.stroke();
+        ctx.restore();
+
+        // --- Hit flashes + ripple ---
+        circleHitFlashes = circleHitFlashes.filter(f => f.life > 0);
+        circleHitFlashes.forEach(f => {
+            f.life--;
+            const progress = 1 - f.life / 18;   // 0 = just hit, 1 = gone
+            const alpha    = f.life / 18;
+
+            // Rim arc flash — tapered (thick center, tapers to nothing at ends)
+            ctx.save();
+            ctx.lineCap    = 'round';
+            ctx.shadowColor = '#44aaff';
+            ctx.shadowBlur  = 14 * alpha;
+            const steps = 14, span = 1.0;
+            for (let i = 0; i < steps; i++) {
+                const t      = i / (steps - 1);
+                const taper  = Math.sin(t * Math.PI);          // 0→1→0
+                const aStart = f.angle - span / 2 + t * span;
+                const aEnd   = aStart + span / steps * 1.2;    // slight overlap for smoothness
+                ctx.lineWidth   = 7 * taper * alpha;
+                ctx.strokeStyle = `rgba(140,210,255,${alpha * taper})`;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, R, aStart, aEnd);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Ripple rings expanding inward from impact point, clipped to bubble
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, R - 0.5, 0, Math.PI * 2);
+            ctx.clip();
+            const ix = centerX + Math.cos(f.angle) * R;
+            const iy = centerY + Math.sin(f.angle) * R;
+            for (let j = 0; j < 3; j++) {
+                const rp = progress - j * 0.22;
+                if (rp <= 0 || rp >= 1.1) continue;
+                const rippleR = rp * R * 2.2;
+                const rAlpha  = Math.max(0, (1 - rp) * alpha * 0.65);
+                ctx.beginPath();
+                ctx.arc(ix, iy, rippleR, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(160,220,255,${rAlpha})`;
+                ctx.lineWidth   = 1.2;
+                ctx.stroke();
+            }
+            ctx.restore();
+        });
+
+        // --- Slot placeholders ---
+        ctx.save();
+        TURRET_SLOTS.forEach((slot, i) => {
+            if (miniTurrets.some(t => t.slotIdx === i)) return;
+            const s = 6;
+            ctx.strokeStyle = 'rgba(120,150,170,0.32)';
+            ctx.lineWidth   = 1;
+            ctx.setLineDash([2, 3]);
+            ctx.strokeRect(slot.x - s, slot.y - s, s * 2, s * 2);
+            ctx.setLineDash([]);
+            ctx.strokeStyle = 'rgba(90,115,135,0.22)';
+            ctx.lineWidth   = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(slot.x - 3, slot.y); ctx.lineTo(slot.x + 3, slot.y);
+            ctx.moveTo(slot.x, slot.y - 3); ctx.lineTo(slot.x, slot.y + 3);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    // --- Heat / Jam Meter (persistent arc around turret) ---
+    function drawHeatMeter() {
+        const heatRatio  = state.heat / 100;
+        const isJammed   = state.jammed;
+        if (heatRatio <= 0.01 && !isJammed) return;
+
+        const radius     = 42;
+        const startAngle = -Math.PI * 0.5;
+        const fullSweep  = Math.PI * 2;
+        ctx.save();
+
+        // Background ring — always faint
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, fullSweep);
+        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+
+        if (isJammed) {
+            const progress = state.jamFrames / 80;
+            const inZone   = progress >= VENT_ZONE_LO && progress <= VENT_ZONE_HI;
+            // Highlighted vent zone (fixed arc band)
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius,
+                startAngle + fullSweep * VENT_ZONE_LO,
+                startAngle + fullSweep * VENT_ZONE_HI);
+            ctx.strokeStyle = 'rgba(255,220,0,0.72)';
+            ctx.lineWidth   = 6;
+            ctx.stroke();
+            // Countdown arc (shrinks as jam clears)
+            if (progress > 0) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, startAngle, startAngle + fullSweep * progress);
+                ctx.strokeStyle = inZone ? '#ffcc00' : '#ff3300';
+                ctx.shadowColor = inZone ? '#ffcc00' : '#ff3300';
+                ctx.shadowBlur  = inZone ? 10 : 4;
+                ctx.lineWidth   = 2;
+                ctx.stroke();
+            }
+            ctx.shadowBlur = 0;
+            ctx.font       = '700 8px "Exo 2", sans-serif';
+            ctx.textAlign  = 'center';
+            ctx.fillStyle  = inZone ? '#ffcc00' : 'rgba(255,80,0,0.8)';
+            ctx.fillText(inZone ? '▶ VENT [R]' : 'JAMMED', centerX, centerY + 55);
+        } else {
+            // Normal heat arc — orange→red as it fills
+            const g = Math.round(200 - heatRatio * 200);
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + fullSweep * heatRatio);
+            ctx.strokeStyle = `rgb(255,${g},0)`;
+            ctx.shadowColor = `rgb(255,${g},0)`;
+            ctx.shadowBlur  = heatRatio > 0.65 ? 7 : 2;
+            ctx.lineWidth   = 2;
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    function getNextTurretSlot() {
+        for (let i = 0; i < TURRET_SLOTS.length; i++) {
+            if (!miniTurrets.some(t => t.slotIdx === i)) return i;
+        }
+        return -1;
+    }
+
+    // --- Upgrade Crates ---
+    function spawnCrate() {
+        if (upgradeCrates.length >= 2) return;
+        if (getNextTurretSlot() === -1) return;
+        let x, y, attempts = 0;
+        do {
+            x = 60 + Math.random() * (canvasWidth  - 120);
+            y = 60 + Math.random() * (canvasHeight - 120);
+            attempts++;
+        } while (Math.hypot(x - centerX, y - centerY) < 140 && attempts < 25);
+        upgradeCrates.push({ x, y, hp: CRATE_HP, maxHp: CRATE_HP, hitTimer: 0 });
+    }
+
+    function renderCrates() {
+        upgradeCrates.forEach(c => {
+            if (c.hitTimer > 0) c.hitTimer--;
+            ctx.save();
+            const flash = c.hitTimer > 0;
+            ctx.shadowColor = '#1bffc1';
+            ctx.shadowBlur  = flash ? 22 : 8;
+            ctx.fillStyle   = flash ? '#ffffff' : '#1bffc1';
+            ctx.fillRect(c.x - 8, c.y - 8, 16, 16);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle  = '#000';
+            ctx.fillRect(c.x - 1.5, c.y - 5,   3, 10);
+            ctx.fillRect(c.x - 5,   c.y - 1.5, 10,  3);
+            ctx.restore();
+            const bw = 20, bh = 3;
+            ctx.fillStyle = '#111';
+            ctx.fillRect(c.x - bw / 2, c.y - 16, bw, bh);
+            ctx.fillStyle = '#1bffc1';
+            ctx.fillRect(c.x - bw / 2, c.y - 16, bw * (c.hp / c.maxHp), bh);
+        });
+    }
+
+    // --- Mini Turrets ---
+    function renderMiniTurrets() {
+        const now = Date.now();
+        miniTurrets = miniTurrets.filter(t => t.hp > 0);
+        if (miniturretCountEl) miniturretCountEl.textContent = miniTurrets.length;
+
+        miniTurrets.forEach(t => {
+            // Lag follow: lerp toward target position (targets updated by movement system)
+            if (t.targetX !== undefined) {
+                t.x += (t.targetX - t.x) * 0.07;
+                t.y += (t.targetY - t.y) * 0.07;
+            }
+
+            let closest = null, closestDist = t.range;
+            enemies.forEach(e => {
+                const d = Math.hypot(e.x - t.x, e.y - t.y);
+                if (d < closestDist) { closest = e; closestDist = d; }
+            });
+
+            const angle = closest ? Math.atan2(closest.y - t.y, closest.x - t.x) : (t.lastAngle || 0);
+            if (closest) t.lastAngle = angle;
+
+            // Range ring
+            ctx.save();
+            ctx.strokeStyle = 'rgba(90,120,140,0.06)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Body + barrel
+            ctx.save();
+            ctx.translate(t.x, t.y);
+            ctx.rotate(angle);
+            // Hexagonal base platform
+            ctx.beginPath();
+            for (let v = 0; v < 6; v++) {
+                const a = (Math.PI / 3) * v + Math.PI / 6;
+                v === 0 ? ctx.moveTo(Math.cos(a) * 8, Math.sin(a) * 8)
+                        : ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
+            }
+            ctx.closePath();
+            ctx.fillStyle   = 'rgba(50,72,88,0.35)';
+            ctx.shadowColor = 'rgba(110,145,168,0.65)';
+            ctx.shadowBlur  = 8;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(135,165,185,0.68)';
+            ctx.lineWidth   = 1;
+            ctx.stroke();
+            // Circular turret body — gunmetal
+            ctx.beginPath();
+            ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle   = '#3a5265';
+            ctx.shadowColor = 'rgba(110,145,165,0.7)';
+            ctx.shadowBlur  = 5;
+            ctx.fill();
+            // Barrel — thick rect with rounded cap
+            ctx.fillStyle  = '#ffffff';
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur  = 4;
+            ctx.beginPath();
+            ctx.roundRect(2, -1.8, 10, 3.6, 1.5);
+            ctx.fill();
+            ctx.restore();
+
+            // HP bar
+            const bw = 22, bh = 3, hpR = t.hp / t.maxHp;
+            ctx.fillStyle = '#222';
+            ctx.fillRect(t.x - bw / 2, t.y + 8, bw, bh);
+            ctx.fillStyle = hpR > 0.5 ? '#70a880' : '#c04030';
+            ctx.fillRect(t.x - bw / 2, t.y + 8, bw * hpR, bh);
+
+            // Auto-fire
+            if (closest && now - t.lastFired >= t.fireCooldown) {
+                t.lastFired = now;
+                const spreadOffset = (Math.random() - 0.5) * 0.15;
+                const finalAngle   = angle + spreadOffset;
+                const fireDx = Math.cos(finalAngle), fireDy = Math.sin(finalAngle);
+                const edge   = rayToEdge(t.x, t.y, t.x + fireDx, t.y + fireDy);
+                gatlingBullets.push({ x1: t.x, y1: t.y, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: t.damage });
+            }
+        });
+    }
+
     // --- Particles ---
-    function spawnExplosion(x, y) {
+function spawnExplosion(x, y) {
         playExplosionSound();
         shakeCanvas(7);
         const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5', '#ff4444'];
@@ -643,6 +1296,24 @@ window.addEventListener('DOMContentLoaded', function() {
                 size: 1 + Math.random() * 2.5,
                 alpha: 1,
                 color: colors[Math.floor(Math.random() * colors.length)]
+            });
+        }
+    }
+
+    function spawnBoundaryHit(x, y) {
+        shakeCanvas(3);
+        const colors = ['#44aaff', '#88ccff', '#aaddff', '#ffffff'];
+        for (let i = 0; i < 10; i++) {
+            const a = Math.PI * 2 * Math.random();
+            const s = 1.0 + Math.random() * 3.5;
+            particles.push({
+                x: x + (Math.random() - 0.5) * 5,
+                y: y + (Math.random() - 0.5) * 5,
+                vx: Math.cos(a) * s,
+                vy: Math.sin(a) * s,
+                size: 1 + Math.random() * 2,
+                alpha: 1,
+                color: colors[Math.floor(Math.random() * colors.length)],
             });
         }
     }
@@ -702,6 +1373,24 @@ window.addEventListener('DOMContentLoaded', function() {
         return Math.hypot(e.x - (x1 + t * dx), e.y - (y1 + t * dy)) < 10;
     }
 
+    // --- Vent Overheat ---
+    const VENT_ZONE_LO = 0.38; // jam progress range where R vents instantly
+    const VENT_ZONE_HI = 0.62;
+
+    function ventOverheat() {
+        if (!state.jammed) return;
+        const now = Date.now();
+        if (now - (state.lastVented || 0) < 200) return;
+        state.lastVented = now;
+        const progress = state.jamFrames / 80;
+        if (progress >= VENT_ZONE_LO && progress <= VENT_ZONE_HI) {
+            state.jammed = false;
+            state.jamFrames = 0;
+            state.heat = 10;
+        }
+        // Outside zone: nothing — wait out the full cooldown
+    }
+
     // --- Fire ---
     function fireAction() {
         if (!state.fireCooldown) return;
@@ -710,7 +1399,7 @@ window.addEventListener('DOMContentLoaded', function() {
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
         state.heat = Math.min(100, state.heat + 7);
-        if (state.heat >= 100) { state.jammed = true; state.jamFrames = 80; }
+        if (state.heat >= 100) { state.jammed = true; state.jamFrames = 80; state.jamWindowAngle = Math.PI; }
 
         const tx = cursorPosX, ty = cursorPosY;
 
@@ -761,9 +1450,17 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Player Damage ---
     function hitDetect() {
         enemies = enemies.filter(e => {
-            const hit = Math.abs(e.x - centerX) < 15 && Math.abs(e.y - centerY) < 15;
-            if (hit) takeHealth();
-            return !hit;
+            if (Math.hypot(e.x - centerX, e.y - centerY) < 80) {
+                takeHealth();
+                playBoundaryHitSound();
+                const hitAngle = Math.atan2(e.y - centerY, e.x - centerX);
+                const impactX  = centerX + Math.cos(hitAngle) * 76;
+                const impactY  = centerY + Math.sin(hitAngle) * 76;
+                spawnBoundaryHit(impactX, impactY);
+                circleHitFlashes.push({ angle: hitAngle, life: 18 });
+                return false;
+            }
+            return true;
         });
     }
 
@@ -802,7 +1499,25 @@ window.addEventListener('DOMContentLoaded', function() {
 
     function populateUpgrades() {
         weaponShop.innerHTML = '';
-        UPGRADES.forEach(u => {
+        const allUpgrades = [...UPGRADES_BASE];
+        allUpgrades.push(state.autoFire ? UPGRADE_FIRERATE : UPGRADE_AUTOFIRE);
+        if (miniTurrets.length > 0) {
+            allUpgrades.push(
+                {
+                    key: 'repair',
+                    name: 'REPAIR TURRETS',
+                    desc: `Restore all ${miniTurrets.length} mini turret(s) to full HP.`,
+                    apply: () => { miniTurrets.forEach(t => { t.hp = t.maxHp; }); },
+                },
+                {
+                    key: 'reinforce',
+                    name: 'REINFORCE',
+                    desc: 'All mini turrets: +25 range, faster fire rate.',
+                    apply: () => { miniTurrets.forEach(t => { t.range += 25; t.fireCooldown = Math.max(600, t.fireCooldown - 200); }); },
+                }
+            );
+        }
+        allUpgrades.forEach(u => {
             const card = document.createElement('div');
             card.className = 'weapon-card';
 
@@ -822,6 +1537,7 @@ window.addEventListener('DOMContentLoaded', function() {
             btn.onclick = () => {
                 u.apply(state);
                 hideLevelUpScreen();
+                showGame();
                 startIntervals();
             };
             actionEl.appendChild(btn);
@@ -836,6 +1552,7 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Game Loop ---
     function gameLoop() {
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        renderTurretArea();
 
         // Turret heat glow + overheat blink/shrink
         const heatRatio = state.heat / 100;
@@ -865,15 +1582,18 @@ window.addEventListener('DOMContentLoaded', function() {
             playerTurret.render();
         }
         ctx.restore();
+        drawHeatMeter();
 
-        turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
+        drawPlayerBarrel();
         turretTarget(cursorPosX, cursorPosY);
         renderEnemies();
         renderGatlingBullets();
+        renderCrates();
+        renderMiniTurrets();
         renderShellCasings();
         renderGatlingMuzzleFlash();
         renderParticles();
-        if (mouseIsDown) fireAction();
+        if (mouseIsDown && state.autoFire) fireAction();
         hitDetect();
         checkLevelUp();
 
@@ -884,10 +1604,6 @@ window.addEventListener('DOMContentLoaded', function() {
         } else {
             state.heat = Math.max(0, state.heat - 1.2);
         }
-        heatBar.style.width = state.heat + '%';
-        heatBar.style.background = state.jammed
-            ? '#ff2200'
-            : `linear-gradient(90deg, #ffcc00, ${state.heat > 70 ? '#ff4400' : '#ffaa00'})`;
 
         // Kill streak display
         if (state.streakFrames > 0) {
@@ -946,16 +1662,20 @@ window.addEventListener('DOMContentLoaded', function() {
             heat: 0,
             jammed: false,
             jamFrames: 0,
+            jamWindowAngle: Math.PI,
             streak: 0,
             streakFrames: 0,
+            lastVented: 0,
+            autoFire: false,
         };
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
+        miniTurrets = []; upgradeCrates = []; circleHitFlashes = [];
+        if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
         weaponDisplay.textContent = 'GATLING';
         levelDisplay.textContent = '1';
         healthBar.style.width = '100%';
-        heatBar.style.width = '0%';
         streakDisplay.classList.remove('visible');
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     }
@@ -964,7 +1684,9 @@ window.addEventListener('DOMContentLoaded', function() {
         clearInterval(gameLoopInt);
         clearInterval(spawnInt);
         clearInterval(moveInt);
-        gameLoopInt = null; spawnInt = null; moveInt = null;
+        clearInterval(crateInt);
+        clearTimeout(crateSpawnTimeout);
+        gameLoopInt = null; spawnInt = null; moveInt = null; crateInt = null; crateSpawnTimeout = null;
     }
 
     function startIntervals() {
@@ -973,6 +1695,8 @@ window.addEventListener('DOMContentLoaded', function() {
         gameLoopInt = setInterval(gameLoop, 30);
         spawnInt    = setInterval(spawnEnemy, def.spawnInterval);
         moveInt     = setInterval(moveEnemies, 20);
+        crateInt          = setInterval(spawnCrate, 14000);
+        crateSpawnTimeout = setTimeout(spawnCrate, 5000);
     }
 
     // --- Button Listeners ---

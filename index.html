@@ -39,7 +39,7 @@
                 <div style="overflow:auto">
                     <h4>Welcome Cadet!</h4>
                     <p>Evil blocks have invaded this quadrant. Eliminate them all across 5 escalating levels. Between waves, choose one of three upgrades: accuracy, damage, or fire rate.</p>
-                    <p>Teal blocks take 4 hits. Red elites take 6. Watch your heat — overfiring jams your Gatling.</p>
+                    <p>Teal blocks take 4 hits. Red elites take 6. Watch your heat — overfiring jams your Gatling. Press R or click to vent. Shoot glowing crates to deploy mini turrets (max 3).</p>
                     <h4>Controls</h4>
                     <p>Aim with mouse. Click or hold to fire.</p>
                     <button id="startbutton">Deploy</button>
@@ -60,8 +60,8 @@
         <section id="topbar">
             <div class="score-wrap bord">SCORE: <span id="score">0</span></div>
             <div class="hud-wrap bord">WPN: <span id="activeweapon">GATLING</span></div>
-            <div class="hud-wrap bord" id="heatwrap">HEAT <div id="heatbar-outer"><div id="heatbar"></div></div></div>
             <div class="hud-wrap bord">LV <span id="levelnum">1</span></div>
+            <div class="hud-wrap bord">⚙ <span id="miniturret-count">0</span>/4</div>
             <div class="lives-wrap bord"><span id="lives">3</span> LIVES</div>
         </section>
         <div id="streak-display"></div>
@@ -78,9 +78,10 @@
             <button id="controls-toggle">×</button>
             <div id="controls-content">
                 <div class="ctrl-row"><span class="ctrl-key">MOUSE</span><span class="ctrl-desc">Aim</span></div>
-                <div class="ctrl-row"><span class="ctrl-key">CLICK</span><span class="ctrl-desc">Fire</span></div>
-                <div class="ctrl-row"><span class="ctrl-key">HOLD</span><span class="ctrl-desc">Auto-fire</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">CLICK</span><span class="ctrl-desc">Fire (semi-auto)</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">HOLD</span><span class="ctrl-desc">Auto-fire (upgrade)</span></div>
                 <div class="ctrl-row"><span class="ctrl-key">HEAT</span><span class="ctrl-desc">Don't overheat!</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">R</span><span class="ctrl-desc">Vent overheat</span></div>
             </div>
         </div>
     </main>

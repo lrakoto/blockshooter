@@ -271,26 +271,6 @@ button{
     color: #1bffc1;
 }
 
-/* Heat bar in topbar */
-#heatwrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-#heatbar-outer {
-    width: 60px;
-    height: 5px;
-    background: rgba(255,255,255,0.15);
-    border-radius: 3px;
-    overflow: hidden;
-}
-#heatbar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #ffcc00, #ff4400);
-    border-radius: 3px;
-    transition: background 0.1s;
-}
 
 /* Streak display */
 #streak-display {
