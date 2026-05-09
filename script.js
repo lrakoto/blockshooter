@@ -351,11 +351,14 @@ window.addEventListener('DOMContentLoaded', function() {
         { killsToNext: 12, spawnInterval: 850,  toughChance: 0.35,  eliteChance: 0 },
         { killsToNext: 15, spawnInterval: 700,  toughChance: 0.5,   eliteChance: 0.15 },
         { killsToNext: 18, spawnInterval: 580,  toughChance: 0.55,  eliteChance: 0.3 },
-        { killsToNext: 20, spawnInterval: 480,  toughChance: 0.5,   eliteChance: 0.45 },
+        { killsToNext: 22, spawnInterval: 480,  toughChance: 0.5,   eliteChance: 0.45 },
+        { killsToNext: 25, spawnInterval: 400,  toughChance: 0.55,  eliteChance: 0.5 },
+        { killsToNext: 28, spawnInterval: 340,  toughChance: 0.55,  eliteChance: 0.6 },
+        { killsToNext: 30, spawnInterval: 280,  toughChance: 0.6,   eliteChance: 0.7 },
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS = [0.45, 0.60, 0.80, 1.05, 1.40];
+    const LEVEL_SPEEDS = [0.45, 0.60, 0.80, 1.05, 1.40, 1.70, 2.00, 2.35];
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -363,17 +366,24 @@ window.addEventListener('DOMContentLoaded', function() {
         'Tougher blocks are joining the assault. Orange blocks take 2 hits.',
         'Elite red blocks have appeared. They require 3 hits to destroy.',
         'Forces are overwhelming. Upgrade your arsenal before re-deploying.',
-        'Final wave. Maximum threat level. Hold the line, Cadet.',
+        'Maximum threat. Reinforcements incoming.',
+        'Command has lost contact. You\'re on your own, Cadet.',
+        'They\'re not stopping. Neither are you.',
+        'Final stand. Hold the line.',
     ];
 
     const GATLING_BASE = { cooldown: 85, damage: 0.45, spread: 0.07 };
 
     const MINI_TURRET_MAX      = 4;
     const MINI_TURRET_RANGE    = 200;
-    const MINI_TURRET_COOLDOWN = 900;
+    const MINI_TURRET_COOLDOWN = 600;
     const MINI_TURRET_DAMAGE   = 1.0;
     const MINI_TURRET_HP       = 40;
     const CRATE_HP             = 16;
+
+    const WAVE_RANGE      = 340;
+    const WAVE_PUSH       = 18;
+    const WAVE_COOLDOWN   = 12000; // ms
 
     // Deployment slots — square around player, computed dynamically so they follow movement
     const SLOT_OFFSET = 62;
@@ -406,6 +416,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let miniTurrets       = [];
     let upgradeCrates     = [];
     let circleHitFlashes  = [];
+    let waveRings         = [];
 
     let gameLoopInt = null;
     let spawnInt    = null;
@@ -509,6 +520,7 @@ window.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('keydown', e => {
         const k = e.key.toLowerCase();
         if (k === 'r') ventOverheat();
+        if (k === 'e') triggerWave();
         if (k === 'w') keysHeld.w = true;
         if (k === 'a') keysHeld.a = true;
         if (k === 's') keysHeld.s = true;
@@ -619,7 +631,32 @@ window.addEventListener('DOMContentLoaded', function() {
                 e.x += Math.cos(angle) * speed;
                 e.y += Math.sin(angle) * speed;
             }
+
+            // Wave push — decays each movement tick
+            if (e.pushVx) { e.x += e.pushVx; e.pushVx *= 0.82; if (Math.abs(e.pushVx) < 0.05) e.pushVx = 0; }
+            if (e.pushVy) { e.y += e.pushVy; e.pushVy *= 0.82; if (Math.abs(e.pushVy) < 0.05) e.pushVy = 0; }
         });
+    }
+
+    function triggerWave() {
+        const now = Date.now();
+        if (now - state.waveLastUsed < WAVE_COOLDOWN) return;
+        state.waveLastUsed = now;
+        shakeCanvas(6);
+        // Push all enemies within range away from player
+        enemies.forEach(e => {
+            const dx = e.x - playerX, dy = e.y - playerY;
+            const dist = Math.hypot(dx, dy) || 1;
+            if (dist < WAVE_RANGE) {
+                const force = (1 - dist / WAVE_RANGE) * WAVE_PUSH;
+                e.pushVx = (dx / dist) * force;
+                e.pushVy = (dy / dist) * force;
+            }
+        });
+        // Spawn expanding ring visuals
+        for (let i = 0; i < 3; i++) {
+            waveRings.push({ x: playerX, y: playerY, r: 20 + i * 30, life: 22, maxLife: 22, delay: i * 3 });
+        }
     }
 
     function renderEnemies() {
@@ -921,16 +958,18 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.fill();
             ctx.restore();
 
-            // Yellow tracer trail
+            // Tracer trail — cyan for turret bullets, yellow for player
+            const tracerColor = b.fromTurret ? '#00eeff' : '#ffdd44';
+            const tracerGlow  = b.fromTurret ? '#00ccff' : '#ffcc00';
             ctx.save();
             ctx.lineCap = 'round';
-            ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 8;
+            ctx.shadowColor = tracerGlow; ctx.shadowBlur = 8;
             const n = b.trail.length;
             for (let i = 0; i < n - 1; i++) {
                 const t = i / (n - 1);
                 ctx.globalAlpha = (1 - t) * 0.85;
                 ctx.lineWidth   = Math.max(0.3, (1 - t) * 1.8);
-                ctx.strokeStyle = '#ffdd44';
+                ctx.strokeStyle = tracerColor;
                 ctx.beginPath();
                 ctx.moveTo(b.trail[i].x, b.trail[i].y);
                 ctx.lineTo(b.trail[i + 1].x, b.trail[i + 1].y);
@@ -986,6 +1025,26 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.stroke();
         }
         ctx.restore();
+    }
+
+    // --- Wave Rings ---
+    function renderWaveRings() {
+        waveRings = waveRings.filter(w => w.life > 0);
+        waveRings.forEach(w => {
+            if (w.delay > 0) { w.delay--; return; }
+            w.r    += 14;
+            w.life--;
+            const a = w.life / w.maxLife;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(80,210,255,${a * 0.9})`;
+            ctx.lineWidth   = 4 * a;
+            ctx.shadowColor = '#00ccff';
+            ctx.shadowBlur  = 18 * a;
+            ctx.stroke();
+            ctx.restore();
+        });
     }
 
     // --- Turret Area (spawn boundary + slot placeholders) ---
@@ -1212,6 +1271,35 @@ window.addEventListener('DOMContentLoaded', function() {
         }
 
         ctx.restore();
+
+        // Wave cooldown ring — outer arc at radius 54, fills as cooldown recharges
+        const waveElapsed  = Date.now() - (state.waveLastUsed || 0);
+        const waveReady    = waveElapsed >= WAVE_COOLDOWN;
+        const waveProgress = Math.min(1, waveElapsed / WAVE_COOLDOWN);
+        const wR = 54;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, wR, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+        if (waveProgress > 0) {
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, wR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * waveProgress);
+            ctx.strokeStyle = waveReady ? '#00eeff' : 'rgba(0,180,220,0.6)';
+            ctx.shadowColor = '#00ccff';
+            ctx.shadowBlur  = waveReady ? 10 : 3;
+            ctx.lineWidth   = 1.5;
+            ctx.stroke();
+        }
+        if (waveReady) {
+            ctx.font      = '700 7px "Exo 2", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#00eeff';
+            ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 8;
+            ctx.fillText('WAVE [E]', centerX, centerY + 66);
+        }
+        ctx.restore();
     }
 
     function getNextTurretSlot() {
@@ -1342,7 +1430,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 const finalAngle   = angle + spreadOffset;
                 const fireDx = Math.cos(finalAngle), fireDy = Math.sin(finalAngle);
                 const edge   = rayToEdge(t.x, t.y, t.x + fireDx, t.y + fireDy);
-                gatlingBullets.push({ x1: t.x, y1: t.y, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: t.damage });
+                gatlingBullets.push({ x1: t.x, y1: t.y, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: t.damage, fromTurret: true });
             }
         });
     }
@@ -1519,6 +1607,7 @@ function spawnExplosion(x, y) {
 
     // --- Player Damage ---
     function hitDetect() {
+        if (state.invincFrames > 0) { state.invincFrames--; return; }
         enemies = enemies.filter(e => {
             if (Math.hypot(e.x - playerX, e.y - playerY) < 56) {
                 takeHealth();
@@ -1680,6 +1769,7 @@ function spawnExplosion(x, y) {
         renderCrates();
         renderMiniTurrets();
         renderShellCasings();
+        renderWaveRings();
         renderGatlingMuzzleFlash();
         renderParticles();
         ctx.restore();
@@ -1712,6 +1802,13 @@ function spawnExplosion(x, y) {
             livesText.textContent = state.lives;
             state.health = 100;
             healthBar.style.width = '100%';
+            state.invincFrames = 120; // ~3.6s grace period
+            shakeCanvas(12);
+            // Red flash overlay
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,0,0,0.35)';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            ctx.restore();
         } else if (state.health <= 0 && state.lives === 0) {
             gameLose();
         }
@@ -1753,6 +1850,8 @@ function spawnExplosion(x, y) {
             jammed: false,
             jamFrames: 0,
             jamDuration: 80,
+            waveLastUsed: 0,
+            invincFrames: 0,
             jamWindowAngle: Math.PI,
             streak: 0,
             streakFrames: 0,
@@ -1761,7 +1860,7 @@ function spawnExplosion(x, y) {
         playerX = centerX; playerY = centerY;
         keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
-        miniTurrets = []; upgradeCrates = []; circleHitFlashes = [];
+        miniTurrets = []; upgradeCrates = []; circleHitFlashes = []; waveRings = [];
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
