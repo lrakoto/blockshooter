@@ -355,7 +355,7 @@ window.addEventListener('DOMContentLoaded', function() {
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS = [0.28, 0.38, 0.52, 0.70, 0.95];
+    const LEVEL_SPEEDS = [0.45, 0.60, 0.80, 1.05, 1.40];
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -376,7 +376,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const CRATE_HP             = 8;
 
     // Deployment slots — square around player, computed dynamically so they follow movement
-    const SLOT_OFFSET = 85;
+    const SLOT_OFFSET = 62;
     function getSlotPositions() {
         return [
             { x: playerX - SLOT_OFFSET, y: playerY - SLOT_OFFSET },
@@ -947,7 +947,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Turret Area (spawn boundary + slot placeholders) ---
     function renderTurretArea() {
-        const R = 80;
+        const R = 56;
 
         // --- Layer 1: Fresnel fill (transparent center, opaque rim like real glass) ---
         ctx.save();
@@ -1086,9 +1086,15 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.restore();
         });
 
-        // --- Slot placeholders ---
+        // --- Slot placeholders (screen-space: turret is always at centerX/centerY visually) ---
+        const displaySlots = [
+            { x: centerX - SLOT_OFFSET, y: centerY - SLOT_OFFSET },
+            { x: centerX + SLOT_OFFSET, y: centerY - SLOT_OFFSET },
+            { x: centerX + SLOT_OFFSET, y: centerY + SLOT_OFFSET },
+            { x: centerX - SLOT_OFFSET, y: centerY + SLOT_OFFSET },
+        ];
         ctx.save();
-        TURRET_SLOTS.forEach((slot, i) => {
+        displaySlots.forEach((slot, i) => {
             if (miniTurrets.some(t => t.slotIdx === i)) return;
             const s = 6;
             ctx.strokeStyle = 'rgba(120,150,170,0.32)';
@@ -1166,7 +1172,7 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     function getNextTurretSlot() {
-        for (let i = 0; i < TURRET_SLOTS.length; i++) {
+        for (let i = 0; i < MINI_TURRET_MAX; i++) {
             if (!miniTurrets.some(t => t.slotIdx === i)) return i;
         }
         return -1;
@@ -1178,8 +1184,10 @@ window.addEventListener('DOMContentLoaded', function() {
         if (getNextTurretSlot() === -1) return;
         let x, y, attempts = 0;
         do {
-            x = 60 + Math.random() * (canvasWidth  - 120);
-            y = 60 + Math.random() * (canvasHeight - 120);
+            const angle = Math.random() * Math.PI * 2;
+            const dist  = 160 + Math.random() * 220;
+            x = playerX + Math.cos(angle) * dist;
+            y = playerY + Math.sin(angle) * dist;
             attempts++;
         } while (Math.hypot(x - playerX, y - playerY) < 140 && attempts < 25);
         upgradeCrates.push({ x, y, hp: CRATE_HP, maxHp: CRATE_HP, hitTimer: 0 });
@@ -1366,12 +1374,15 @@ function spawnExplosion(x, y) {
     function rayToEdge(x1, y1, tx, ty) {
         const dx = tx - x1, dy = ty - y1;
         if (dx === 0 && dy === 0) return { x: tx, y: ty };
+        // Use current viewport bounds in world space
+        const vLeft = playerX - centerX, vRight  = playerX + centerX;
+        const vTop  = playerY - centerY, vBottom = playerY + centerY;
         const ts = [];
-        if (dx > 0) ts.push((canvasWidth  - x1) / dx);
-        else if (dx < 0) ts.push(-x1 / dx);
-        if (dy > 0) ts.push((canvasHeight - y1) / dy);
-        else if (dy < 0) ts.push(-y1 / dy);
-        const t = Math.min(...ts.filter(t => t > 0));
+        if (dx > 0) ts.push((vRight  - x1) / dx);
+        else if (dx < 0) ts.push((vLeft - x1) / dx);
+        if (dy > 0) ts.push((vBottom - y1) / dy);
+        else if (dy < 0) ts.push((vTop  - y1) / dy);
+        const t = Math.min(...ts.filter(v => v > 0));
         return { x: x1 + dx * t, y: y1 + dy * t };
     }
 
@@ -1462,12 +1473,12 @@ function spawnExplosion(x, y) {
     // --- Player Damage ---
     function hitDetect() {
         enemies = enemies.filter(e => {
-            if (Math.hypot(e.x - playerX, e.y - playerY) < 80) {
+            if (Math.hypot(e.x - playerX, e.y - playerY) < 56) {
                 takeHealth();
                 playBoundaryHitSound();
                 const hitAngle = Math.atan2(e.y - playerY, e.x - playerX);
-                const impactX  = playerX + Math.cos(hitAngle) * 76;
-                const impactY  = playerY + Math.sin(hitAngle) * 76;
+                const impactX  = playerX + Math.cos(hitAngle) * 53;
+                const impactY  = playerY + Math.sin(hitAngle) * 53;
                 spawnBoundaryHit(impactX, impactY);
                 circleHitFlashes.push({ angle: hitAngle, life: 18 });
                 return false;
@@ -1568,9 +1579,8 @@ function spawnExplosion(x, y) {
         if (keysHeld.a) dx -= PLAYER_SPEED;
         if (keysHeld.d) dx += PLAYER_SPEED;
         if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; } // normalise diagonal
-        const margin = 50;
-        playerX = Math.max(margin, Math.min(canvasWidth  - margin, playerX + dx));
-        playerY = Math.max(margin, Math.min(canvasHeight - margin, playerY + dy));
+        playerX += dx;
+        playerY += dy;
         // Update mini turret targets to follow player
         const slots = getSlotPositions();
         miniTurrets.forEach(t => {
