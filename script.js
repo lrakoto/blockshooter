@@ -373,7 +373,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const MINI_TURRET_COOLDOWN = 900;
     const MINI_TURRET_DAMAGE   = 0.5;
     const MINI_TURRET_HP       = 40;
-    const CRATE_HP             = 8;
+    const CRATE_HP             = 16;
 
     // Deployment slots — square around player, computed dynamically so they follow movement
     const SLOT_OFFSET = 62;
@@ -680,9 +680,9 @@ window.addEventListener('DOMContentLoaded', function() {
 
             ctx.restore();
 
-            // HP bar
+            // HP bar — below enemy
             if (e.maxHp > 1) {
-                const bw = 16, bh = 3, bx = e.x - 8, by = e.y - 14;
+                const bw = 16, bh = 1.5, bx = e.x - 8, by = e.y + 14;
                 ctx.fillStyle = '#222';
                 ctx.fillRect(bx, by, bw, bh);
                 ctx.fillStyle = getEnemyColor(e.hp);
@@ -848,6 +848,10 @@ window.addEventListener('DOMContentLoaded', function() {
                                     damage: MINI_TURRET_DAMAGE,
                                     lastFired: 0,
                                     lastAngle: 0,
+                                    wobblePhase: Math.random() * Math.PI * 2,
+                                    wobbleFreq:  0.025 + Math.random() * 0.02,
+                                    wobbleAmp:   3 + Math.random() * 3,
+                                    lerpSpeed:   0.055 + Math.random() * 0.04,
                                 });
                             }
                             spawnExplosion(c.x, c.y);
@@ -1222,10 +1226,14 @@ window.addEventListener('DOMContentLoaded', function() {
         if (miniturretCountEl) miniturretCountEl.textContent = miniTurrets.length;
 
         miniTurrets.forEach(t => {
-            // Lag follow: lerp toward target position (targets updated by movement system)
+            // Lag follow: lerp toward target with per-turret speed + gentle wobble
             if (t.targetX !== undefined) {
-                t.x += (t.targetX - t.x) * 0.07;
-                t.y += (t.targetY - t.y) * 0.07;
+                t.wobblePhase += t.wobbleFreq;
+                const wob = Math.sin(t.wobblePhase) * t.wobbleAmp;
+                const perpX = Math.cos(t.wobblePhase + Math.PI / 2) * wob;
+                const perpY = Math.sin(t.wobblePhase + Math.PI / 2) * wob;
+                t.x += ((t.targetX + perpX) - t.x) * t.lerpSpeed;
+                t.y += ((t.targetY + perpY) - t.y) * t.lerpSpeed;
             }
 
             let closest = null, closestDist = t.range;
@@ -1281,12 +1289,12 @@ window.addEventListener('DOMContentLoaded', function() {
             ctx.fill();
             ctx.restore();
 
-            // HP bar
-            const bw = 22, bh = 3, hpR = t.hp / t.maxHp;
+            // HP bar — below turret
+            const bw = 22, bh = 1.5, hpR = t.hp / t.maxHp;
             ctx.fillStyle = '#222';
-            ctx.fillRect(t.x - bw / 2, t.y + 8, bw, bh);
+            ctx.fillRect(t.x - bw / 2, t.y + 12, bw, bh);
             ctx.fillStyle = hpR > 0.5 ? '#70a880' : '#c04030';
-            ctx.fillRect(t.x - bw / 2, t.y + 8, bw * hpR, bh);
+            ctx.fillRect(t.x - bw / 2, t.y + 12, bw * hpR, bh);
 
             // Auto-fire
             if (closest && now - t.lastFired >= t.fireCooldown) {
