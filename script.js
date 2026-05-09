@@ -360,19 +360,19 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // 5 levels — killsToNext: kills needed to advance, spawnInterval: ms between spawns
     const LEVELS = [
-        { killsToNext: 8,  spawnInterval: 1000, toughChance: 0,    eliteChance: 0 },
-        { killsToNext: 12, spawnInterval: 850,  toughChance: 0.35,  eliteChance: 0 },
-        { killsToNext: 15, spawnInterval: 700,  toughChance: 0.5,   eliteChance: 0.15 },
-        { killsToNext: 18, spawnInterval: 580,  toughChance: 0.55,  eliteChance: 0.3 },
-        { killsToNext: 22, spawnInterval: 480,  toughChance: 0.5,   eliteChance: 0.45 },
-        { killsToNext: 25, spawnInterval: 400,  toughChance: 0.55,  eliteChance: 0.5 },
-        { killsToNext: 28, spawnInterval: 340,  toughChance: 0.55,  eliteChance: 0.6 },
-        { killsToNext: 30, spawnInterval: 280,  toughChance: 0.6,   eliteChance: 0.7 },
+        { killsToNext: 12, spawnInterval: 1100, toughChance: 0,     eliteChance: 0 },
+        { killsToNext: 18, spawnInterval: 950,  toughChance: 0.35,  eliteChance: 0 },
+        { killsToNext: 24, spawnInterval: 800,  toughChance: 0.5,   eliteChance: 0.15 },
+        { killsToNext: 30, spawnInterval: 680,  toughChance: 0.55,  eliteChance: 0.3 },
+        { killsToNext: 36, spawnInterval: 570,  toughChance: 0.5,   eliteChance: 0.45 },
+        { killsToNext: 42, spawnInterval: 480,  toughChance: 0.55,  eliteChance: 0.5 },
+        { killsToNext: 48, spawnInterval: 410,  toughChance: 0.55,  eliteChance: 0.6 },
+        { killsToNext: 55, spawnInterval: 350,  toughChance: 0.6,   eliteChance: 0.7 },
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS    = [0.45, 0.60, 0.80, 1.05, 1.30, 1.50, 1.60, 1.70];
-    const ENEMY_MAX_SPEED = 1.70;
+    const LEVEL_SPEEDS    = [0.40, 0.52, 0.66, 0.82, 1.00, 1.14, 1.22, 1.28];
+    const ENEMY_MAX_SPEED = 1.28;
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -400,11 +400,13 @@ window.addEventListener('DOMContentLoaded', function() {
     const WAVE_COOLDOWN   = 12000; // ms
     const WAVE_CONE       = Math.PI * 0.55; // ~99° total arc
 
-    const FLAME_TURRET_MAX    = 4;
-    const FLAME_SLOT_OFFSET   = 95;
-    const FLAME_RANGE         = 130;
-    const FLAME_CONE          = Math.PI / 3;  // 60° arc
-    const FLAME_DPS           = 0.12;         // damage per game-loop tick (~4 DPS at 30ms)
+    const SHOTGUN_TURRET_MAX    = 4;
+    const SHOTGUN_SLOT_OFFSET   = 95;
+    const SHOTGUN_RANGE         = 160;
+    const SHOTGUN_PELLETS       = 7;
+    const SHOTGUN_SPREAD        = Math.PI / 9;  // 20° total arc
+    const SHOTGUN_DAMAGE        = 0.9;
+    const SHOTGUN_COOLDOWN      = 1400;         // ms between bursts
 
     // Deployment slots — square around player, computed dynamically so they follow movement
     const SLOT_OFFSET = 62;
@@ -417,18 +419,18 @@ window.addEventListener('DOMContentLoaded', function() {
         ];
     }
 
-    // Flame turret slots — cardinal directions, slightly further out
-    function getFlameSlotPositions() {
+    // Shotgun turret slots — cardinal directions, slightly further out
+    function getShotgunSlotPositions() {
         return [
-            { x: playerX,                    y: playerY - FLAME_SLOT_OFFSET },
-            { x: playerX + FLAME_SLOT_OFFSET, y: playerY },
-            { x: playerX,                    y: playerY + FLAME_SLOT_OFFSET },
-            { x: playerX - FLAME_SLOT_OFFSET, y: playerY },
+            { x: playerX,                      y: playerY - SHOTGUN_SLOT_OFFSET },
+            { x: playerX + SHOTGUN_SLOT_OFFSET, y: playerY },
+            { x: playerX,                      y: playerY + SHOTGUN_SLOT_OFFSET },
+            { x: playerX - SHOTGUN_SLOT_OFFSET, y: playerY },
         ];
     }
 
-    function getNextFlameSlot() {
-        for (let i = 0; i < FLAME_TURRET_MAX; i++) {
+    function getNextShotgunSlot() {
+        for (let i = 0; i < SHOTGUN_TURRET_MAX; i++) {
             if (!flameTurrets.some(t => t.slotIdx === i)) return i;
         }
         return -1;
@@ -581,7 +583,7 @@ window.addEventListener('DOMContentLoaded', function() {
         const excess = state.level - LEVELS.length;
         const last = LEVELS[LEVELS.length - 1];
         return {
-            killsToNext:   last.killsToNext   + excess * 6,
+            killsToNext:   last.killsToNext   + excess * 10,
             spawnInterval: Math.max(120, last.spawnInterval - excess * 18),
             toughChance:   Math.min(0.75, last.toughChance  + excess * 0.015),
             eliteChance:   Math.min(0.85, last.eliteChance  + excess * 0.02),
@@ -946,7 +948,7 @@ window.addEventListener('DOMContentLoaded', function() {
         const remaining = [];
         gatlingBullets.forEach(b => {
             const prevProgress = b.progress;
-            b.progress += 0.05;
+            b.progress += b.isShotgun ? 0.10 : 0.05;
             if (b.progress >= 1) return;
             const px = b.x1 + (b.x2 - b.x1) * prevProgress;
             const py = b.y1 + (b.y2 - b.y1) * prevProgress;
@@ -969,13 +971,13 @@ window.addEventListener('DOMContentLoaded', function() {
                         c.hitTimer = 6;
                         if (c.hp <= 0) {
                             if (c.crateType === 'flame') {
-                                const slotIdx = getNextFlameSlot();
+                                const slotIdx = getNextShotgunSlot();
                                 if (slotIdx !== -1) {
-                                    const slot = getFlameSlotPositions()[slotIdx];
+                                    const slot = getShotgunSlotPositions()[slotIdx];
                                     flameTurrets.push({
                                         x: slot.x, y: slot.y, slotIdx,
                                         hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
-                                        lastAngle: 0,
+                                        damage: SHOTGUN_DAMAGE, lastAngle: 0, lastFired: 0,
                                         wobblePhase: Math.random() * Math.PI * 2,
                                         wobbleFreq:  0.022 + Math.random() * 0.018,
                                         wobbleAmp:   2.5 + Math.random() * 2.5,
@@ -1099,13 +1101,14 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.restore();
     }
 
-    // --- Flame Turrets ---
+    // --- Shotgun Turrets ---
     function renderFlameTurrets() {
-        const slots = getFlameSlotPositions();
+        const slots = getShotgunSlotPositions();
+        const now   = Date.now();
         flameTurrets = flameTurrets.filter(t => t.hp > 0);
 
-        // Lag follow
         flameTurrets.forEach(t => {
+            // Lag follow with wobble
             if (t.slotIdx !== undefined) {
                 t.wobblePhase += t.wobbleFreq;
                 const wob  = Math.sin(t.wobblePhase) * t.wobbleAmp;
@@ -1115,8 +1118,8 @@ window.addEventListener('DOMContentLoaded', function() {
                 t.y += ((slots[t.slotIdx].y + perpY) - t.y) * t.lerpSpeed;
             }
 
-            // Find closest enemy in range
-            let closest = null, closestDist = FLAME_RANGE;
+            // Find closest enemy within range
+            let closest = null, closestDist = SHOTGUN_RANGE;
             enemies.forEach(e => {
                 const d = Math.hypot(e.x - t.x, e.y - t.y);
                 if (d < closestDist) { closest = e; closestDist = d; }
@@ -1125,36 +1128,21 @@ window.addEventListener('DOMContentLoaded', function() {
             const angle = closest ? Math.atan2(closest.y - t.y, closest.x - t.x) : (t.lastAngle || 0);
             if (closest) t.lastAngle = angle;
 
-            // Flame cone visual — flickering layered arcs
-            if (closest) {
-                for (let f = 0; f < 5; f++) {
-                    const jitter = (Math.random() - 0.5) * 0.35;
-                    const reach  = FLAME_RANGE * (0.55 + Math.random() * 0.45);
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.moveTo(t.x, t.y);
-                    ctx.arc(t.x, t.y, reach, angle - FLAME_CONE / 2 + jitter, angle + FLAME_CONE / 2 + jitter);
-                    ctx.closePath();
-                    const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, reach);
-                    grad.addColorStop(0,    `rgba(255,230,100,${0.55 - f * 0.08})`);
-                    grad.addColorStop(0.35, `rgba(255,110,0,${0.40 - f * 0.06})`);
-                    grad.addColorStop(1,    'rgba(180,20,0,0)');
-                    ctx.fillStyle = grad;
-                    ctx.fill();
-                    ctx.restore();
+            // Fire burst of pellets
+            if (closest && now - (t.lastFired || 0) >= SHOTGUN_COOLDOWN) {
+                t.lastFired = now;
+                for (let p = 0; p < SHOTGUN_PELLETS; p++) {
+                    const spread = (p / (SHOTGUN_PELLETS - 1) - 0.5) * SHOTGUN_SPREAD;
+                    const a      = angle + spread;
+                    const dx     = Math.cos(a), dy = Math.sin(a);
+                    const endX   = t.x + dx * SHOTGUN_RANGE;
+                    const endY   = t.y + dy * SHOTGUN_RANGE;
+                    gatlingBullets.push({ x1: t.x, y1: t.y, x2: endX, y2: endY,
+                        progress: 0, trail: [], damage: t.damage, fromTurret: true, isShotgun: true });
                 }
-
-                // Apply damage to enemies in cone each frame
-                enemies.forEach(e => {
-                    const d = Math.hypot(e.x - t.x, e.y - t.y);
-                    if (d >= FLAME_RANGE) return;
-                    let diff = Math.atan2(e.y - t.y, e.x - t.x) - angle;
-                    diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-                    if (Math.abs(diff) < FLAME_CONE / 2) hitEnemy(e, FLAME_DPS);
-                });
             }
 
-            // Body — squat hexagonal base, orange barrel
+            // Body — wide hex base, double-barrel look
             ctx.save();
             ctx.translate(t.x, t.y);
             ctx.rotate(angle);
@@ -1165,27 +1153,25 @@ window.addEventListener('DOMContentLoaded', function() {
                         : ctx.lineTo(Math.cos(a) * 9, Math.sin(a) * 9);
             }
             ctx.closePath();
-            ctx.fillStyle   = 'rgba(70,35,10,0.45)';
-            ctx.shadowColor = 'rgba(255,120,0,0.7)';
+            ctx.fillStyle   = 'rgba(40,30,70,0.50)';
+            ctx.shadowColor = 'rgba(180,100,255,0.7)';
             ctx.shadowBlur  = 10;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255,140,40,0.75)';
+            ctx.strokeStyle = 'rgba(190,120,255,0.75)';
             ctx.lineWidth   = 1;
             ctx.stroke();
-            // Wide stubby barrel
-            ctx.fillStyle   = '#ff6600';
-            ctx.shadowColor = '#ff4400';
-            ctx.shadowBlur  = 6;
-            ctx.beginPath();
-            ctx.roundRect(1, -3, 9, 6, 2);
-            ctx.fill();
+            // Double barrel
+            ctx.fillStyle   = '#cc88ff';
+            ctx.shadowColor = '#aa44ff'; ctx.shadowBlur = 5;
+            ctx.beginPath(); ctx.roundRect(1, -4,   10, 2.5, 1); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(1,  1.5, 10, 2.5, 1); ctx.fill();
             ctx.restore();
 
             // HP bar
             const bw = 22, bh = 1.5, hpR = t.hp / t.maxHp;
             ctx.fillStyle = '#222';
             ctx.fillRect(t.x - bw / 2, t.y + 13, bw, bh);
-            ctx.fillStyle = hpR > 0.5 ? '#ff8833' : '#cc2200';
+            ctx.fillStyle = hpR > 0.5 ? '#bb77ff' : '#7700cc';
             ctx.fillRect(t.x - bw / 2, t.y + 13, bw * hpR, bh);
         });
     }
@@ -1438,34 +1424,33 @@ window.addEventListener('DOMContentLoaded', function() {
 
         ctx.restore();
 
-        // Wave cooldown ring — outer arc at radius 54, fills as cooldown recharges
+        // Wave cooldown ring — always visible, fills as cooldown recharges
         const waveElapsed  = Date.now() - (state.waveLastUsed || 0);
         const waveReady    = waveElapsed >= WAVE_COOLDOWN;
         const waveProgress = Math.min(1, waveElapsed / WAVE_COOLDOWN);
         const wR = 54;
         ctx.save();
+        // Full background ring always drawn
         ctx.beginPath();
         ctx.arc(centerX, centerY, wR, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.strokeStyle = 'rgba(0,180,220,0.15)';
         ctx.lineWidth   = 1.5;
         ctx.stroke();
-        if (waveProgress > 0) {
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, wR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * waveProgress);
-            ctx.strokeStyle = waveReady ? '#00eeff' : 'rgba(0,180,220,0.6)';
-            ctx.shadowColor = '#00ccff';
-            ctx.shadowBlur  = waveReady ? 10 : 3;
-            ctx.lineWidth   = 1.5;
-            ctx.stroke();
-        }
-        if (waveReady) {
-            const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 220);
-            ctx.font      = '700 7px "Exo 2", sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = `rgba(0,238,255,${pulse})`;
-            ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10 * pulse;
-            ctx.fillText('▶ WAVE [E]', centerX, centerY + 66);
-        }
+        // Progress arc
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, wR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * waveProgress);
+        ctx.strokeStyle = waveReady ? '#00eeff' : 'rgba(0,180,220,0.55)';
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur  = waveReady ? 10 : 2;
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+        // Label — always shown, dims while charging
+        const pulse = waveReady ? (0.55 + 0.45 * Math.sin(Date.now() / 220)) : 0.3;
+        ctx.font      = '700 7px "Exo 2", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = waveReady ? `rgba(0,238,255,${pulse})` : `rgba(0,180,220,0.35)`;
+        ctx.shadowColor = '#00ccff'; ctx.shadowBlur = waveReady ? 10 * pulse : 0;
+        ctx.fillText(waveReady ? '▶ WAVE [E]' : 'WAVE [E]', centerX, centerY + 66);
         ctx.restore();
     }
 
@@ -1479,13 +1464,12 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Upgrade Crates ---
     function spawnCrate() {
         if (upgradeCrates.length >= 2) return;
-        const gatlingFull = getNextTurretSlot() === -1;
-        const flameFull   = getNextFlameSlot()   === -1;
-        if (gatlingFull && flameFull) return;
-        // Pick type based on availability; prefer whichever has more open slots
+        const gatlingFull = getNextTurretSlot()   === -1;
+        const shotgunFull = getNextShotgunSlot()   === -1;
+        if (gatlingFull && shotgunFull) return;
         let crateType;
         if (gatlingFull)      crateType = 'flame';
-        else if (flameFull)   crateType = 'gatling';
+        else if (shotgunFull) crateType = 'gatling';
         else                  crateType = Math.random() < 0.5 ? 'gatling' : 'flame';
         let x, y, attempts = 0;
         do {
@@ -1832,55 +1816,56 @@ function spawnExplosion(x, y) {
         levelMenu.style.display = 'none';
     }
 
+    const TURRET_UPGRADES = [
+        { key: 'tdmg',   name: 'TURRET DMG',      desc: 'All turrets deal +50% damage.',                        apply: () => { miniTurrets.forEach(t => { t.damage   = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); } },
+        { key: 'trate',  name: 'TURRET FIRE RATE', desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
+        { key: 'thp',    name: 'TURRET ARMOR',     desc: 'All turrets gain +20 max HP and are fully repaired.', apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
+    ];
+
+    function makeCard(name, desc, onSelect) {
+        const card = document.createElement('div');
+        card.className = 'weapon-card';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'weapon-name'; nameEl.textContent = name;
+        const descEl = document.createElement('div');
+        descEl.className = 'weapon-desc'; descEl.textContent = desc;
+        const actionEl = document.createElement('div');
+        actionEl.className = 'weapon-action';
+        const btn = document.createElement('button');
+        btn.textContent = 'SELECT';
+        btn.onclick = onSelect;
+        actionEl.appendChild(btn);
+        card.appendChild(nameEl); card.appendChild(descEl); card.appendChild(actionEl);
+        return card;
+    }
+
     function populateUpgrades() {
         weaponShop.innerHTML = '';
-        const allUpgrades = [...UPGRADES];
-        if (miniTurrets.length > 0) {
-            allUpgrades.push(
-                {
-                    key: 'repair',
-                    name: 'REPAIR TURRETS',
-                    desc: `Restore all ${miniTurrets.length} mini turret(s) to full HP.`,
-                    apply: () => { miniTurrets.forEach(t => { t.hp = t.maxHp; }); },
-                },
-                {
-                    key: 'reinforce',
-                    name: 'REINFORCE',
-                    desc: 'All mini turrets: +25 range, faster fire rate.',
-                    apply: () => { miniTurrets.forEach(t => { t.range += 25; t.fireCooldown = Math.max(600, t.fireCooldown - 200); }); },
-                }
-            );
-        }
-        allUpgrades.forEach(u => {
-            const card = document.createElement('div');
-            card.className = 'weapon-card';
 
-            const nameEl = document.createElement('div');
-            nameEl.className = 'weapon-name';
-            nameEl.textContent = u.name;
-
-            const descEl = document.createElement('div');
-            descEl.className = 'weapon-desc';
-            descEl.textContent = u.desc;
-
-            const actionEl = document.createElement('div');
-            actionEl.className = 'weapon-action';
-
-            const btn = document.createElement('button');
-            btn.textContent = 'SELECT';
-            btn.onclick = () => {
+        // Player upgrades
+        UPGRADES.forEach(u => {
+            weaponShop.appendChild(makeCard(u.name, u.desc, () => {
                 u.apply(state);
-                hideLevelUpScreen();
-                showGame();
-                startIntervals();
-            };
-            actionEl.appendChild(btn);
-
-            card.appendChild(nameEl);
-            card.appendChild(descEl);
-            card.appendChild(actionEl);
-            weaponShop.appendChild(card);
+                hideLevelUpScreen(); showGame(); startIntervals();
+            }));
         });
+
+        // Turret upgrades — separate section if any turrets deployed
+        const anyTurrets = miniTurrets.length > 0 || flameTurrets.length > 0;
+        if (anyTurrets) {
+            const sep = document.createElement('p');
+            sep.className = 'shop-credits-line';
+            sep.style.marginTop = '16px';
+            sep.textContent = 'TURRET UPGRADES';
+            weaponShop.appendChild(sep);
+
+            TURRET_UPGRADES.forEach(u => {
+                weaponShop.appendChild(makeCard(u.name, u.desc, () => {
+                    u.apply();
+                    hideLevelUpScreen(); showGame(); startIntervals();
+                }));
+            });
+        }
     }
 
     // --- Game Loop ---
@@ -1984,13 +1969,15 @@ function spawnExplosion(x, y) {
             livesText.textContent = state.lives;
             state.health = 100;
             healthBar.style.width = '100%';
-            state.invincFrames = 120; // ~3.6s grace period
+            state.invincFrames = 120;
             shakeCanvas(12);
-            // Red flash overlay
             ctx.save();
             ctx.fillStyle = 'rgba(255,0,0,0.35)';
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
             ctx.restore();
+            // Bonus crates on death — 1 guaranteed, 50% chance of a second
+            spawnCrate(); spawnCrate();
+            if (Math.random() < 0.5) spawnCrate();
         } else if (state.health <= 0 && state.lives === 0) {
             gameLose();
         }
