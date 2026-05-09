@@ -371,8 +371,8 @@ window.addEventListener('DOMContentLoaded', function() {
     ];
 
     // Enemy speed per level
-    const LEVEL_SPEEDS    = [0.36, 0.46, 0.57, 0.68, 0.78, 0.86, 0.92, 0.96];
-    const ENEMY_MAX_SPEED = 0.96;
+    const LEVEL_SPEEDS    = [0.28, 0.36, 0.45, 0.54, 0.62, 0.68, 0.73, 0.76];
+    const ENEMY_MAX_SPEED = 0.76;
 
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
@@ -389,10 +389,10 @@ window.addEventListener('DOMContentLoaded', function() {
     const GATLING_BASE = { cooldown: 85, damage: 0.45, spread: 0.07 };
 
     const MINI_TURRET_MAX      = 4;
-    const MINI_TURRET_RANGE    = 140;
+    const MINI_TURRET_RANGE    = 100;
     const MINI_TURRET_COOLDOWN = 600;
-    const MINI_TURRET_DAMAGE   = 1.0;
-    const MINI_TURRET_HP       = 40;
+    const MINI_TURRET_DAMAGE   = 0.65;
+    const MINI_TURRET_HP       = 20;
     const CRATE_HP             = 16;
 
     const WAVE_RANGE      = 380;
@@ -699,23 +699,16 @@ window.addEventListener('DOMContentLoaded', function() {
         if (now - state.waveLastUsed < WAVE_COOLDOWN) return;
         state.waveLastUsed = now;
         shakeCanvas(8);
-        const aimAngle = Math.atan2(cursorPosY - centerY, cursorPosX - centerX);
-        const coneHalf = WAVE_CONE / 2;
         enemies.forEach(e => {
             const dx = e.x - playerX, dy = e.y - playerY;
             const dist = Math.hypot(dx, dy) || 1;
             if (dist >= WAVE_RANGE) return;
-            let diff = Math.atan2(dy, dx) - aimAngle;
-            diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-            if (Math.abs(diff) > coneHalf) return;
-            const coneScale = 1 - Math.abs(diff) / coneHalf;
-            const distScale = 1 - dist / WAVE_RANGE;
-            const force = WAVE_PUSH * (0.4 + coneScale * 0.6) * (0.5 + distScale * 0.5);
+            const force = WAVE_PUSH * (1 - dist / WAVE_RANGE);
             e.pushVx = (dx / dist) * force;
             e.pushVy = (dy / dist) * force;
         });
         for (let i = 0; i < 3; i++) {
-            waveRings.push({ x: playerX, y: playerY, r: 18 + i * 28, life: 24, maxLife: 24, delay: i * 4, aimAngle, coneHalf });
+            waveRings.push({ x: playerX, y: playerY, r: 18 + i * 28, life: 24, maxLife: 24, delay: i * 4 });
         }
     }
 
@@ -1188,9 +1181,7 @@ window.addEventListener('DOMContentLoaded', function() {
             const a = w.life / w.maxLife;
             ctx.save();
             ctx.beginPath();
-            ctx.arc(w.x, w.y, w.r,
-                w.aimAngle - w.coneHalf,
-                w.aimAngle + w.coneHalf);
+            ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
             ctx.strokeStyle = `rgba(80,210,255,${a * 0.95})`;
             ctx.lineWidth   = 5 * a;
             ctx.lineCap     = 'round';
@@ -1771,12 +1762,12 @@ function spawnExplosion(x, y) {
     function hitDetect() {
         if (state.invincFrames > 0) { state.invincFrames--; return; }
         enemies = enemies.filter(e => {
-            if (Math.hypot(e.x - playerX, e.y - playerY) < 56) {
+            if (Math.hypot(e.x - playerX, e.y - playerY) < 72) {
                 takeHealth();
                 playBoundaryHitSound();
                 const hitAngle = Math.atan2(e.y - playerY, e.x - playerX);
-                const impactX  = playerX + Math.cos(hitAngle) * 53;
-                const impactY  = playerY + Math.sin(hitAngle) * 53;
+                const impactX  = playerX + Math.cos(hitAngle) * 54;
+                const impactY  = playerY + Math.sin(hitAngle) * 54;
                 spawnBoundaryHit(impactX, impactY);
                 circleHitFlashes.push({ angle: hitAngle, life: 18 });
                 return false;
