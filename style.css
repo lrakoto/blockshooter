@@ -161,6 +161,12 @@ button{
     box-sizing: border-box;
     position: absolute;
     overflow-y: auto;
+    background: rgba(0, 0, 0, 0.55);
+    -webkit-backdrop-filter: blur(18px) saturate(0.8);
+    backdrop-filter: blur(18px) saturate(0.8);
+}
+[data-theme="light"] #levelmenu {
+    background: rgba(180, 186, 200, 0.55);
 }
 
 .innerwrap.col {
@@ -359,3 +365,96 @@ button{
     z-index: 10;
 }
 #controls-open:hover { color: #fff; }
+
+/* Theme toggle button */
+#theme-toggle {
+    display: block;
+    position: fixed;
+    bottom: 60px;
+    right: 16px;
+    padding: 6px 10px;
+    font-size: 0.5em;
+    letter-spacing: 2px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    z-index: 10;
+}
+#theme-toggle:hover { color: #fff; }
+
+/* ─── Light theme ─────────────────────────────────────────────────────────── */
+[data-theme="light"] body {
+    background: #d8dce6;
+    color: #1e2030;
+}
+[data-theme="light"] canvas {
+    background: #d0d4de;
+    background-image: none;
+}
+[data-theme="light"] canvas, [data-theme="light"] aside, [data-theme="light"] .bord {
+    border-color: rgba(0,0,0,0.12);
+}
+[data-theme="light"] .innerwrap {
+    background: linear-gradient(90deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0) 100%);
+    color: #1e2030;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.18);
+}
+[data-theme="light"] h1 {
+    color: #1e2030;
+    background: linear-gradient(0deg, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0) 1%, rgba(0,0,0,0.09) 100%);
+}
+[data-theme="light"] h3 { color: #1e2030; }
+[data-theme="light"] .score-wrap {
+    background: linear-gradient(90deg, rgba(0,0,0,0.14) 0%, rgba(0,0,0,0) 100%);
+    color: #1e2030;
+}
+[data-theme="light"] .lives-wrap {
+    background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.14) 100%);
+    color: #1e2030;
+}
+[data-theme="light"] .hud-wrap {
+    background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.09) 50%, rgba(0,0,0,0) 100%);
+    color: #1e2030;
+}
+[data-theme="light"] #bottombar {
+    border-color: rgba(0,0,0,0.22);
+}
+[data-theme="light"] button {
+    background: rgba(0,0,0,0.08);
+    color: #1e2030;
+    border-color: rgba(0,0,0,0.18);
+}
+[data-theme="light"] button:hover { background: rgba(0,0,0,0.15); }
+[data-theme="light"] #controls-legend {
+    background: rgba(220,226,235,0.92);
+    border-color: rgba(0,0,0,0.15);
+}
+[data-theme="light"] #controls-toggle {
+    background: rgba(0,0,0,0.08);
+    color: rgba(0,0,0,0.5);
+}
+[data-theme="light"] #controls-toggle:hover { background: rgba(0,0,0,0.16); }
+[data-theme="light"] #controls-open {
+    background: rgba(220,226,235,0.85);
+    border-color: rgba(0,0,0,0.15);
+    color: rgba(0,0,0,0.55);
+}
+[data-theme="light"] #controls-open:hover { color: #1e2030; }
+[data-theme="light"] .ctrl-desc { color: rgba(0,0,0,0.55); }
+[data-theme="light"] .weapon-card {
+    border-color: rgba(0,0,0,0.13);
+    background: rgba(0,0,0,0.05);
+}
+[data-theme="light"] .weapon-card.active-weapon {
+    border-color: #1bffc1;
+    background: rgba(27,255,193,0.10);
+}
+[data-theme="light"] .weapon-desc { color: rgba(0,0,0,0.58); }
+[data-theme="light"] #theme-toggle {
+    background: rgba(0,0,0,0.08);
+    border-color: rgba(0,0,0,0.15);
+    color: rgba(0,0,0,0.6);
+}
+[data-theme="light"] #theme-toggle:hover { color: #1e2030; }

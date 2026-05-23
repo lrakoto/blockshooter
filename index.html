@@ -40,7 +40,7 @@
                 <div style="overflow:auto">
                     <h4>Welcome Cadet!</h4>
                     <p>Evil blocks have invaded. Survive as long as you can — levels never end. Between waves, pick an upgrade: accuracy, damage, fire rate, or heat sink.</p>
-                    <p>Watch your heat — overfiring jams your Gatling. Shoot teal crates to deploy Gatling turrets, orange crates for Shotgun turrets. Press E for a directional wave blast.</p>
+                    <p>Watch your heat — overfiring jams your Gatling. Buy Gatling and Shotgun turrets in the upgrade shop between waves. Press E for a directional wave blast.</p>
                     <h4>Controls</h4>
                     <p>Aim with mouse. Click or hold to fire.</p>
                     <button id="startbutton">Deploy</button>
@@ -62,7 +62,7 @@
             <div class="score-wrap bord">SCORE: <span id="score">0</span></div>
             <div class="hud-wrap bord">WPN: <span id="activeweapon">GATLING</span></div>
             <div class="hud-wrap bord">LV <span id="levelnum">1</span></div>
-            <div class="hud-wrap bord">⚙ <span id="miniturret-count">0</span>/4</div>
+            <div class="hud-wrap bord">⚙ <span id="miniturret-count">0</span>/8</div>
             <div class="lives-wrap bord"><span id="lives">3</span> LIVES</div>
         </section>
         <div id="streak-display"></div>
@@ -74,6 +74,7 @@
         <section id="bottombar">
             <div class="health-wrap" id="health"></div>
         </section>
+        <button id="theme-toggle">&#9711; LIGHT</button>
         <button id="controls-open">? CONTROLS</button>
         <div id="controls-legend">
             <button id="controls-toggle">×</button>

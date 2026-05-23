@@ -32,6 +32,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const controlsLegend   = document.querySelector('#controls-legend');
     const controlsOpen     = document.querySelector('#controls-open');
     const controlsToggle   = document.querySelector('#controls-toggle');
+    const themeToggle      = document.querySelector('#theme-toggle');
     const ctx              = gameCanvas.getContext('2d');
     const miniturretCountEl = document.querySelector('#miniturret-count');
 
@@ -393,7 +394,6 @@ window.addEventListener('DOMContentLoaded', function() {
     const MINI_TURRET_COOLDOWN = 600;
     const MINI_TURRET_DAMAGE   = 0.65;
     const MINI_TURRET_HP       = 20;
-    const CRATE_HP             = 16;
 
     const WAVE_RANGE      = 240;   // base — upgradeable via state.waveRange
     const WAVE_PUSH       = 32;
@@ -437,14 +437,14 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // Upgrades offered at each level-up — player picks one
     const UPGRADES = [
-        { key: 'accuracy',  name: 'ACCURACY',    baseCost: 100, costStep: 70,  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
-        { key: 'damage',    name: 'DAMAGE',       baseCost: 140, costStep: 90,  desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
-        { key: 'firerate',  name: 'FIRE RATE',    baseCost: 115, costStep: 75,  desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
-        { key: 'heatsink',  name: 'HEAT SINK',    baseCost: 100, costStep: 65,  desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
-        { key: 'caliber',   name: 'CALIBER',      baseCost: 150, costStep: 95,  desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
-        { key: 'speed',     name: 'SPEED',        baseCost: 90,  costStep: 70,  desc: 'Move faster. +0.5 movement speed.',                  apply: s => { s.playerSpeed   = Math.min(8, (s.playerSpeed || PLAYER_SPEED) + 0.5); } },
-        { key: 'wavedmg',   name: 'WAVE POWER',   baseCost: 115, costStep: 80,  desc: 'Wave strips HP from enemies hit. +1 damage.',        apply: s => { s.waveDamage    = (s.waveDamage || 1) + 1; } },
-        { key: 'waverange', name: 'WAVE RANGE',   baseCost: 95,  costStep: 70,  desc: 'Wider blast radius. +50px wave range.',              apply: s => { s.waveRange     = (s.waveRange  || WAVE_RANGE) + 50; } },
+        { key: 'accuracy',  name: 'ACCURACY',    baseCost: 110, costStep: 77,  desc: 'Tighter grouping. Reduces bullet spread.',           apply: s => { s.spread        = Math.max(0.02, s.spread - 0.05); } },
+        { key: 'damage',    name: 'DAMAGE',       baseCost: 154, costStep: 99,  desc: 'Harder hitting rounds. +0.5 damage per bullet.',     apply: s => { s.bulletDamage += 0.5; } },
+        { key: 'firerate',  name: 'FIRE RATE',    baseCost: 127, costStep: 83,  desc: 'Faster cyclic rate. Reduces cooldown by 10ms.',      apply: s => { s.fireCooldown  = Math.max(30, s.fireCooldown - 10); } },
+        { key: 'heatsink',  name: 'HEAT SINK',    baseCost: 110, costStep: 72,  desc: 'Better thermal venting. Cuts jam duration by 20%.',  apply: s => { s.jamDuration   = Math.max(20, Math.round(s.jamDuration * 0.80)); } },
+        { key: 'caliber',   name: 'CALIBER',      baseCost: 165, costStep: 105, desc: 'Wider rounds. Each bullet has +3px hit radius.',     apply: s => { s.bulletRadius  = Math.min(14, (s.bulletRadius || 0) + 3); } },
+        { key: 'speed',     name: 'SPEED',        baseCost: 99,  costStep: 77,  desc: 'Move faster. +0.5 movement speed.',                  apply: s => { s.playerSpeed   = Math.min(8, (s.playerSpeed || PLAYER_SPEED) + 0.5); } },
+        { key: 'wavedmg',   name: 'WAVE POWER',   baseCost: 127, costStep: 88,  desc: 'Wave strips HP from enemies hit. +1 damage.',        apply: s => { s.waveDamage    = (s.waveDamage || 1) + 1; } },
+        { key: 'waverange', name: 'WAVE RANGE',   baseCost: 105, costStep: 77,  desc: 'Wider blast radius. +50px wave range.',              apply: s => { s.waveRange     = (s.waveRange  || WAVE_RANGE) + 50; } },
     ];
 
     // --- Game State ---
@@ -458,7 +458,6 @@ window.addEventListener('DOMContentLoaded', function() {
 
     let miniTurrets       = [];
     let flameTurrets      = [];
-    let upgradeCrates     = [];
     let circleHitFlashes  = [];
     let waveRings         = [];
     let enemyBullets      = [];
@@ -466,9 +465,6 @@ window.addEventListener('DOMContentLoaded', function() {
     let gameLoopInt = null;
     let spawnInt    = null;
     let moveInt     = null;
-    let crateInt            = null;
-    let crateSpawnTimeout   = null;
-
     let cursorPosX = playerX;
     let cursorPosY = 0;
     let mouseIsDown = false;
@@ -1008,56 +1004,6 @@ window.addEventListener('DOMContentLoaded', function() {
                 }
                 return true;
             });
-            // Segment hit detection — upgrade crates
-            if (!hit) {
-                upgradeCrates = upgradeCrates.filter(c => {
-                    if (!hit && rayHitsEnemy(c, px, py, cx, cy)) {
-                        hit = true;
-                        c.hp -= b.damage;
-                        c.hitTimer = 6;
-                        if (c.hp <= 0) {
-                            if (c.crateType === 'flame') {
-                                const slotIdx = getNextShotgunSlot();
-                                if (slotIdx !== -1) {
-                                    const slot = getShotgunSlotPositions()[slotIdx];
-                                    flameTurrets.push({
-                                        x: slot.x, y: slot.y, slotIdx,
-                                        hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
-                                        damage: SHOTGUN_DAMAGE, lastAngle: 0, lastFired: 0,
-                                        wobblePhase: Math.random() * Math.PI * 2,
-                                        wobbleFreq:  0.022 + Math.random() * 0.018,
-                                        wobbleAmp:   2.5 + Math.random() * 2.5,
-                                        lerpSpeed:   0.05 + Math.random() * 0.035,
-                                    });
-                                }
-                            } else {
-                                const slotIdx = getNextTurretSlot();
-                                if (slotIdx !== -1) {
-                                    const slot = getSlotPositions()[slotIdx];
-                                    miniTurrets.push({
-                                        x: slot.x, y: slot.y,
-                                        targetX: slot.x, targetY: slot.y,
-                                        slotIdx,
-                                        hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
-                                        range: MINI_TURRET_RANGE,
-                                        fireCooldown: MINI_TURRET_COOLDOWN,
-                                        damage: MINI_TURRET_DAMAGE,
-                                        lastFired: 0, lastAngle: 0,
-                                        wobblePhase: Math.random() * Math.PI * 2,
-                                        wobbleFreq:  0.025 + Math.random() * 0.02,
-                                        wobbleAmp:   3 + Math.random() * 3,
-                                        lerpSpeed:   0.055 + Math.random() * 0.04,
-                                    });
-                                }
-                            }
-                            spawnExplosion(c.x, c.y);
-                            return false;
-                        }
-                        return true;
-                    }
-                    return true;
-                });
-            }
             if (hit) return;
             b.trail.unshift({ x: cx, y: cy });
             if (b.trail.length > 12) b.trail.pop();
@@ -1523,56 +1469,11 @@ window.addEventListener('DOMContentLoaded', function() {
         return -1;
     }
 
-    // --- Upgrade Crates ---
-    function spawnCrate() {
-        if (upgradeCrates.length >= 2) return;
-        const gatlingFull = getNextTurretSlot()   === -1;
-        const shotgunFull = getNextShotgunSlot()   === -1;
-        if (gatlingFull && shotgunFull) return;
-        let crateType;
-        if (gatlingFull)      crateType = 'flame';
-        else if (shotgunFull) crateType = 'gatling';
-        else                  crateType = Math.random() < 0.5 ? 'gatling' : 'flame';
-        let x, y, attempts = 0;
-        do {
-            const angle = Math.random() * Math.PI * 2;
-            const dist  = 160 + Math.random() * 220;
-            x = playerX + Math.cos(angle) * dist;
-            y = playerY + Math.sin(angle) * dist;
-            attempts++;
-        } while (Math.hypot(x - playerX, y - playerY) < 140 && attempts < 25);
-        upgradeCrates.push({ x, y, hp: CRATE_HP, maxHp: CRATE_HP, hitTimer: 0, crateType });
-    }
-
-    function renderCrates() {
-        upgradeCrates.forEach(c => {
-            if (c.hitTimer > 0) c.hitTimer--;
-            const isFlame = c.crateType === 'flame';
-            const baseCol = isFlame ? '#ff7722' : '#1bffc1';
-            ctx.save();
-            const flash = c.hitTimer > 0;
-            ctx.shadowColor = baseCol;
-            ctx.shadowBlur  = flash ? 22 : 8;
-            ctx.fillStyle   = flash ? '#ffffff' : baseCol;
-            ctx.fillRect(c.x - 8, c.y - 8, 16, 16);
-            ctx.shadowBlur = 0;
-            ctx.fillStyle  = '#000';
-            ctx.fillRect(c.x - 1.5, c.y - 5,   3, 10);
-            ctx.fillRect(c.x - 5,   c.y - 1.5, 10,  3);
-            ctx.restore();
-            const bw = 20, bh = 3;
-            ctx.fillStyle = '#111';
-            ctx.fillRect(c.x - bw / 2, c.y - 16, bw, bh);
-            ctx.fillStyle = baseCol;
-            ctx.fillRect(c.x - bw / 2, c.y - 16, bw * (c.hp / c.maxHp), bh);
-        });
-    }
-
     // --- Mini Turrets ---
     function renderMiniTurrets() {
         const now = Date.now();
         miniTurrets = miniTurrets.filter(t => t.hp > 0);
-        if (miniturretCountEl) miniturretCountEl.textContent = miniTurrets.length;
+        if (miniturretCountEl) miniturretCountEl.textContent = miniTurrets.length + flameTurrets.length;
 
         miniTurrets.forEach(t => {
             // Lag follow: lerp toward target with per-turret speed + gentle wobble
@@ -1895,9 +1796,9 @@ function spawnExplosion(x, y) {
     }
 
     const TURRET_UPGRADES = [
-        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 165, costStep: 110, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
-        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 140, costStep: 85,  desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
-        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 125, costStep: 80,  desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
+        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 182, costStep: 121, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
+        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 154, costStep: 94,  desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
+        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 138, costStep: 88,  desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
     ];
 
     function getUpgradeCost(u) {
@@ -1948,6 +1849,58 @@ function spawnExplosion(x, y) {
         return card;
     }
 
+    function makeTurretPurchaseCard(key, name, desc, baseCost, costStep, getCount, getMax, deployFn) {
+        const card = document.createElement('div');
+        card.className = 'weapon-card';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'weapon-name';
+
+        const descEl = document.createElement('div');
+        descEl.className = 'weapon-desc';
+        descEl.textContent = desc;
+
+        const costEl = document.createElement('div');
+        costEl.className = 'weapon-desc';
+        costEl.style.cssText = 'color:#1bffc1; font-weight:700; margin-bottom:6px;';
+
+        const actionEl = document.createElement('div');
+        actionEl.className = 'weapon-action';
+        const btn = document.createElement('button');
+
+        function refresh() {
+            const count = getCount();
+            const max   = getMax();
+            const cost  = baseCost + (state.upgradeCounts[key] || 0) * costStep;
+            const full  = count >= max;
+            const affordable = state.credits >= cost;
+            nameEl.textContent = `${name} (${count}/${max})`;
+            costEl.textContent = full ? 'FULL' : `${cost} CR`;
+            btn.textContent    = 'DEPLOY';
+            btn.disabled       = full || !affordable;
+            card.classList.toggle('active-weapon', !full && affordable);
+        }
+
+        btn.onclick = () => {
+            const count = getCount();
+            if (count >= getMax()) return;
+            const cost = baseCost + (state.upgradeCounts[key] || 0) * costStep;
+            if (state.credits < cost) return;
+            state.credits -= cost;
+            state.upgradeCounts[key] = (state.upgradeCounts[key] || 0) + 1;
+            deployFn();
+            populateUpgrades();
+        };
+
+        actionEl.appendChild(btn);
+        card.appendChild(nameEl);
+        card.appendChild(descEl);
+        card.appendChild(costEl);
+        card.appendChild(actionEl);
+        refresh();
+        return card;
+    }
+
     function populateUpgrades() {
         weaponShop.innerHTML = '';
 
@@ -1963,7 +1916,59 @@ function spawnExplosion(x, y) {
             weaponShop.appendChild(makeUpgradeCard(u, () => u.apply(state)));
         });
 
-        // Turret upgrades — separate section if any turrets deployed
+        // Turret purchase section
+        const turretSep = document.createElement('p');
+        turretSep.className = 'shop-credits-line';
+        turretSep.style.cssText = 'margin-top:20px; grid-column:1/-1; width:100%; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;';
+        turretSep.textContent = 'DEPLOY TURRETS';
+        weaponShop.appendChild(turretSep);
+
+        weaponShop.appendChild(makeTurretPurchaseCard(
+            'buy_gatling', 'GATLING TURRET',
+            'Deploys a Gatling turret at a diagonal slot. Fast-firing, accurate.',
+            250, 150,
+            () => miniTurrets.length,
+            () => MINI_TURRET_MAX,
+            () => {
+                const slotIdx = getNextTurretSlot();
+                if (slotIdx === -1) return;
+                const slot = getSlotPositions()[slotIdx];
+                miniTurrets.push({
+                    x: slot.x, y: slot.y, targetX: slot.x, targetY: slot.y, slotIdx,
+                    hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
+                    range: MINI_TURRET_RANGE, fireCooldown: MINI_TURRET_COOLDOWN,
+                    damage: MINI_TURRET_DAMAGE, lastFired: 0, lastAngle: 0,
+                    wobblePhase: Math.random() * Math.PI * 2,
+                    wobbleFreq: 0.025 + Math.random() * 0.02,
+                    wobbleAmp: 3 + Math.random() * 3,
+                    lerpSpeed: 0.055 + Math.random() * 0.04,
+                });
+            }
+        ));
+
+        weaponShop.appendChild(makeTurretPurchaseCard(
+            'buy_shotgun', 'SHOTGUN TURRET',
+            'Deploys a Shotgun turret at a cardinal slot. 7-pellet burst, wide arc.',
+            350, 200,
+            () => flameTurrets.length,
+            () => SHOTGUN_TURRET_MAX,
+            () => {
+                const slotIdx = getNextShotgunSlot();
+                if (slotIdx === -1) return;
+                const slot = getShotgunSlotPositions()[slotIdx];
+                flameTurrets.push({
+                    x: slot.x, y: slot.y, slotIdx,
+                    hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
+                    damage: SHOTGUN_DAMAGE, lastAngle: 0, lastFired: 0,
+                    wobblePhase: Math.random() * Math.PI * 2,
+                    wobbleFreq: 0.022 + Math.random() * 0.018,
+                    wobbleAmp: 2.5 + Math.random() * 2.5,
+                    lerpSpeed: 0.05 + Math.random() * 0.035,
+                });
+            }
+        ));
+
+        // Turret upgrades — only if any turrets are deployed
         const anyTurrets = miniTurrets.length > 0 || flameTurrets.length > 0;
         if (anyTurrets) {
             const sep = document.createElement('p');
@@ -2043,7 +2048,6 @@ function spawnExplosion(x, y) {
         ctx.translate(camX, camY);
         renderEnemies();
         renderGatlingBullets();
-        renderCrates();
         renderMiniTurrets();
         renderFlameTurrets();
         renderShellCasings();
@@ -2092,9 +2096,6 @@ function spawnExplosion(x, y) {
             ctx.fillStyle = 'rgba(255,0,0,0.35)';
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
             ctx.restore();
-            // Bonus crates on death — 1 guaranteed, 50% chance of a second
-            spawnCrate(); spawnCrate();
-            if (Math.random() < 0.5) spawnCrate();
         } else if (state.health <= 0 && state.lives === 0) {
             gameLose();
         }
@@ -2153,7 +2154,7 @@ function spawnExplosion(x, y) {
         playerX = centerX; playerY = centerY;
         keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
-        miniTurrets = []; flameTurrets = []; upgradeCrates = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
+        miniTurrets = []; flameTurrets = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
@@ -2168,9 +2169,7 @@ function spawnExplosion(x, y) {
         clearInterval(gameLoopInt);
         clearInterval(spawnInt);
         clearInterval(moveInt);
-        clearInterval(crateInt);
-        clearTimeout(crateSpawnTimeout);
-        gameLoopInt = null; spawnInt = null; moveInt = null; crateInt = null; crateSpawnTimeout = null;
+        gameLoopInt = null; spawnInt = null; moveInt = null;
     }
 
     function startIntervals() {
@@ -2179,8 +2178,6 @@ function spawnExplosion(x, y) {
         gameLoopInt = setInterval(gameLoop, 30);
         spawnInt    = setInterval(spawnEnemy, def.spawnInterval);
         moveInt     = setInterval(moveEnemies, 20);
-        crateInt          = setInterval(spawnCrate, 28000);
-        crateSpawnTimeout = setTimeout(spawnCrate, 14000);
     }
 
     // --- Button Listeners ---
@@ -2223,6 +2220,18 @@ function spawnExplosion(x, y) {
     controlsOpen.addEventListener('click', () => {
         controlsOpen.style.display = 'none';
         controlsLegend.style.display = 'block';
+    });
+
+    // Theme toggle
+    function applyTheme(theme) {
+        if (theme === 'light') document.body.setAttribute('data-theme', 'light');
+        else document.body.removeAttribute('data-theme');
+        themeToggle.textContent = theme === 'light' ? '◑ DARK' : '◑ LIGHT';
+        localStorage.setItem('blockshooter_theme', theme);
+    }
+    applyTheme(localStorage.getItem('blockshooter_theme') || 'dark');
+    themeToggle.addEventListener('click', () => {
+        applyTheme(document.body.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
     });
 
     // --- End States ---
