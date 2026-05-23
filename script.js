@@ -595,7 +595,7 @@ window.addEventListener('DOMContentLoaded', function() {
         return { x: touch.clientX - r.left, y: touch.clientY - r.top };
     }
 
-    const AIM_DEAD = 8; // px of drag before aim direction updates
+    const AIM_DEAD = 4; // px of jitter filter before aim updates
 
     function handleTouchStart(e) {
         e.preventDefault();
@@ -629,15 +629,16 @@ window.addEventListener('DOMContentLoaded', function() {
                 leftTouch.dx = x - leftTouch.originX;
                 leftTouch.dy = y - leftTouch.originY;
             } else if (rightTouch && touch.identifier === rightTouch.id) {
-                const dx  = x - rightTouch.originX;
-                const dy  = y - rightTouch.originY;
-                const mag = Math.hypot(dx, dy);
-                if (mag > AIM_DEAD) {
+                const dx = x - rightTouch.originX;
+                const dy = y - rightTouch.originY;
+                if (Math.hypot(dx, dy) > AIM_DEAD) {
                     rightTouch.dx = dx;
                     rightTouch.dy = dy;
-                    // Project direction far from screen center so barrel angle is precise
-                    cursorPosX = centerX + (dx / mag) * 9999;
-                    cursorPosY = centerY + (dy / mag) * 9999;
+                    // Right zone is a miniature viewport: origin = screen center,
+                    // edges of the zone map to edges of the full screen.
+                    // Scale = full viewport width / right zone width = canvasWidth / (canvasWidth/2) = 2
+                    cursorPosX = centerX + dx * 2;
+                    cursorPosY = centerY + dy * 2;
                 }
             }
         });
@@ -2177,32 +2178,35 @@ function spawnExplosion(x, y) {
             ctx.stroke();
         }
 
-        // Right: aim indicator — ring at thumb origin + arrow showing fire direction
+        // Right: trackpad aim indicator — origin dot + line to current finger position
         if (rightTouch) {
             const ox  = rightTouch.originX, oy = rightTouch.originY;
+            const fx  = ox + rightTouch.dx,  fy = oy + rightTouch.dy;
             const mag = Math.hypot(rightTouch.dx, rightTouch.dy);
             ctx.globalAlpha = 0.5;
-            // Origin ring
+            // Origin crosshair
+            ctx.strokeStyle = 'rgba(255,120,60,0.55)';
+            ctx.lineWidth   = 1.5;
+            ctx.lineCap     = 'round';
+            const cs = 10;
             ctx.beginPath();
-            ctx.arc(ox, oy, JOYSTICK_RADIUS, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,120,60,0.45)';
-            ctx.lineWidth   = 2;
+            ctx.moveTo(ox - cs, oy); ctx.lineTo(ox + cs, oy);
+            ctx.moveTo(ox, oy - cs); ctx.lineTo(ox, oy + cs);
             ctx.stroke();
-            ctx.fillStyle   = 'rgba(255,80,20,0.05)';
-            ctx.fill();
-            // Direction arrow (only once dragged past dead zone)
+            // Line + tip dot once dragged past jitter threshold
             if (mag > AIM_DEAD) {
-                const angle = Math.atan2(rightTouch.dy, rightTouch.dx);
-                const clamp = Math.min(mag, JOYSTICK_RADIUS);
-                const kx    = ox + Math.cos(angle) * clamp;
-                const ky    = oy + Math.sin(angle) * clamp;
-                // Knob at drag tip
                 ctx.beginPath();
-                ctx.arc(kx, ky, 24, 0, Math.PI * 2);
-                ctx.fillStyle   = 'rgba(255,120,60,0.18)';
+                ctx.moveTo(ox, oy);
+                ctx.lineTo(fx, fy);
+                ctx.strokeStyle = 'rgba(255,140,60,0.45)';
+                ctx.lineWidth   = 1.5;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(fx, fy, 7, 0, Math.PI * 2);
+                ctx.fillStyle   = 'rgba(255,120,60,0.4)';
                 ctx.fill();
-                ctx.strokeStyle = 'rgba(255,140,60,0.65)';
-                ctx.lineWidth   = 2;
+                ctx.strokeStyle = 'rgba(255,150,60,0.7)';
+                ctx.lineWidth   = 1.5;
                 ctx.stroke();
             }
         }
