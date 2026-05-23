@@ -344,12 +344,20 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Canvas Setup ---
-    gameCanvas.setAttribute('height', getComputedStyle(gameCanvas)['height']);
-    gameCanvas.setAttribute('width', getComputedStyle(gameCanvas)['width']);
-    const canvasWidth  = parseInt(getComputedStyle(gameCanvas)['width']);
-    const canvasHeight = parseInt(getComputedStyle(gameCanvas)['height']);
-    const centerX = canvasWidth / 2;
-    const centerY = canvasHeight / 2;
+    let canvasWidth, canvasHeight, centerX, centerY;
+
+    function resizeCanvas() {
+        canvasWidth  = window.innerWidth;
+        canvasHeight = window.innerHeight;
+        gameCanvas.width          = canvasWidth;
+        gameCanvas.height         = canvasHeight;
+        gameCanvas.style.width    = canvasWidth  + 'px';
+        gameCanvas.style.height   = canvasHeight + 'px';
+        centerX = canvasWidth  / 2;
+        centerY = canvasHeight / 2;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', () => requestAnimationFrame(resizeCanvas));
 
     // --- Player position (mutable — updated by WASD) ---
     let playerX = centerX;

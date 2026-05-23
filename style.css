@@ -1,31 +1,36 @@
 body{
     padding:0;
     margin:0;
+    overflow:hidden;
     background:black;
     color:#62647A;
     font-family: 'Exo 2', sans-serif;
 }
 
+main {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+}
+
 #winmenu, #losemenu{
     display:none;
-    width:100vw;
-    height:100vh;
-    z-index:7;
-    padding: 15% 15%;
-    box-sizing: border-box;
     position: absolute;
-    margin: 0 auto;
+    inset: 0;
+    z-index:7;
+    padding: 10% 12%;
+    box-sizing: border-box;
+    overflow-y: auto;
 }
 
 #startmenu {
     display:block;
-    width:100vw;
-    height:100vh;
-    z-index:7;
-    padding: 15% 15%;
-    box-sizing: border-box;
     position: absolute;
-    margin: 0 auto;
+    inset: 0;
+    z-index:7;
+    padding: 10% 12%;
+    box-sizing: border-box;
+    overflow-y: auto;
 }
 
 .cubeimg{
@@ -77,8 +82,8 @@ h3{
 }
 
 canvas{
-    width:100%;
-    height:100vh;
+    display: block;
+    touch-action: none;
     background: url(./images/pattern-02.png);
     background-repeat: repeat;
     background-size: 100px;
@@ -154,12 +159,11 @@ button{
 /* Level-up / shop screen */
 #levelmenu {
     display: none;
-    width: 100vw;
-    height: 100vh;
+    position: absolute;
+    inset: 0;
     z-index: 7;
     padding: 6% 10%;
     box-sizing: border-box;
-    position: absolute;
     overflow-y: auto;
     background: rgba(0, 0, 0, 0.55);
     -webkit-backdrop-filter: blur(18px) saturate(0.8);
@@ -497,17 +501,32 @@ button{
 }
 
 /* ─── Mobile / landscape phone layout ────────────────────────────────────── */
-@media (max-width: 900px) and (orientation: landscape) {
-    .score-wrap, .lives-wrap { padding: 10px 14px; width: auto; min-width: 60px; font-size: 0.8em; }
-    .hud-wrap { padding: 10px 10px; font-size: 0.68em; }
-    #topbar { margin-top: 6px; }
+@media (max-width: 1024px) and (orientation: landscape) {
+    /* Menus */
+    #startmenu, #winmenu, #losemenu { padding: 4% 6%; }
     #levelmenu { padding: 3% 5%; }
-    #weaponshop { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 7px; }
-    .weapon-card { padding: 9px 10px; }
-    .weapon-name { font-size: 0.65em; }
-    .weapon-desc { font-size: 0.55em; }
-    .weapon-action button { padding: 6px 8px; font-size: 0.5em; }
+    .innerwrap { padding: 4%; }
+    .cubeimg { display: none; }
+
+    /* HUD */
+    #topbar { margin-top: 4px; }
+    .score-wrap, .lives-wrap { padding: 8px 12px; width: auto; min-width: 55px; font-size: 0.75em; }
+    .hud-wrap { padding: 8px 10px; font-size: 0.65em; }
+    h1 { font-size: 1em; padding: 12px; }
+    h3 { font-size: 0.6em; bottom: 18px; }
+    #bottombar { bottom: 16px; }
+
+    /* Shop cards */
+    #weaponshop { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+    .weapon-card { padding: 8px 10px; }
+    .weapon-name { font-size: 0.63em; }
+    .weapon-desc { font-size: 0.53em; }
+    .weapon-action button { padding: 6px 8px; font-size: 0.48em; }
+    .shop-credits-line { font-size: 0.7em; margin-bottom: 8px; }
+
+    /* Controls — hidden, player uses touch */
     #controls-legend, #controls-open { display: none !important; }
-    #theme-toggle { bottom: 12px; right: 10px; }
-    h1 { font-size: 1.2em; }
+
+    /* Theme toggle */
+    #theme-toggle { bottom: 10px; right: 10px; padding: 5px 8px; font-size: 0.45em; }
 }
