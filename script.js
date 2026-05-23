@@ -595,6 +595,8 @@ window.addEventListener('DOMContentLoaded', function() {
         return { x: touch.clientX - r.left, y: touch.clientY - r.top };
     }
 
+    const AIM_DEAD = 8; // px of drag before aim direction updates
+
     function handleTouchStart(e) {
         e.preventDefault();
         Array.from(e.changedTouches).forEach(touch => {
@@ -603,8 +605,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 if (!leftTouch) leftTouch = { id: touch.identifier, originX: x, originY: y, dx: 0, dy: 0 };
             } else {
                 if (!rightTouch) {
-                    rightTouch = { id: touch.identifier };
-                    cursorPosX = x; cursorPosY = y;
+                    rightTouch = { id: touch.identifier, originX: x, originY: y, dx: 0, dy: 0 };
                     mouseIsDown = true;
                     if (state.jammed) ventOverheat(); else fireAction();
                 }
@@ -620,7 +621,16 @@ window.addEventListener('DOMContentLoaded', function() {
                 leftTouch.dx = x - leftTouch.originX;
                 leftTouch.dy = y - leftTouch.originY;
             } else if (rightTouch && touch.identifier === rightTouch.id) {
-                cursorPosX = x; cursorPosY = y;
+                const dx  = x - rightTouch.originX;
+                const dy  = y - rightTouch.originY;
+                const mag = Math.hypot(dx, dy);
+                if (mag > AIM_DEAD) {
+                    rightTouch.dx = dx;
+                    rightTouch.dy = dy;
+                    // Project direction far from screen center so barrel angle is precise
+                    cursorPosX = centerX + (dx / mag) * 9999;
+                    cursorPosY = centerY + (dy / mag) * 9999;
+                }
             }
         });
     }
@@ -2132,14 +2142,16 @@ function spawnExplosion(x, y) {
         renderGatlingMuzzleFlash();
         renderParticles();
         ctx.restore();
-        // Joystick overlay — screen space, drawn after world camera restore
+        // Touch overlays — screen space, drawn after world camera restore
+        ctx.save();
+
+        // Left: movement joystick
         if (leftTouch) {
-            const ox  = leftTouch.originX, oy = leftTouch.originY;
-            const mag = Math.hypot(leftTouch.dx, leftTouch.dy);
+            const ox    = leftTouch.originX, oy = leftTouch.originY;
+            const mag   = Math.hypot(leftTouch.dx, leftTouch.dy);
             const clamp = Math.min(mag, JOYSTICK_RADIUS);
-            const kx  = mag > 0 ? ox + (leftTouch.dx / mag) * clamp : ox;
-            const ky  = mag > 0 ? oy + (leftTouch.dy / mag) * clamp : oy;
-            ctx.save();
+            const kx    = mag > 0 ? ox + (leftTouch.dx / mag) * clamp : ox;
+            const ky    = mag > 0 ? oy + (leftTouch.dy / mag) * clamp : oy;
             ctx.globalAlpha = 0.5;
             ctx.beginPath();
             ctx.arc(ox, oy, JOYSTICK_RADIUS, 0, Math.PI * 2);
@@ -2155,9 +2167,40 @@ function spawnExplosion(x, y) {
             ctx.strokeStyle = 'rgba(255,255,255,0.55)';
             ctx.lineWidth   = 2;
             ctx.stroke();
-            ctx.globalAlpha = 1;
-            ctx.restore();
         }
+
+        // Right: aim indicator — ring at thumb origin + arrow showing fire direction
+        if (rightTouch) {
+            const ox  = rightTouch.originX, oy = rightTouch.originY;
+            const mag = Math.hypot(rightTouch.dx, rightTouch.dy);
+            ctx.globalAlpha = 0.5;
+            // Origin ring
+            ctx.beginPath();
+            ctx.arc(ox, oy, JOYSTICK_RADIUS, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,120,60,0.45)';
+            ctx.lineWidth   = 2;
+            ctx.stroke();
+            ctx.fillStyle   = 'rgba(255,80,20,0.05)';
+            ctx.fill();
+            // Direction arrow (only once dragged past dead zone)
+            if (mag > AIM_DEAD) {
+                const angle = Math.atan2(rightTouch.dy, rightTouch.dx);
+                const clamp = Math.min(mag, JOYSTICK_RADIUS);
+                const kx    = ox + Math.cos(angle) * clamp;
+                const ky    = oy + Math.sin(angle) * clamp;
+                // Knob at drag tip
+                ctx.beginPath();
+                ctx.arc(kx, ky, 24, 0, Math.PI * 2);
+                ctx.fillStyle   = 'rgba(255,120,60,0.18)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255,140,60,0.65)';
+                ctx.lineWidth   = 2;
+                ctx.stroke();
+            }
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
 
         if (mouseIsDown) fireAction();
         hitDetect();
