@@ -469,6 +469,12 @@ window.addEventListener('DOMContentLoaded', function() {
     let cursorPosY = 0;
     let mouseIsDown = false;
 
+    // Touch state — dual-zone controls
+    let leftTouch  = null; // { id, originX, originY, dx, dy }
+    let rightTouch = null; // { id }
+    const JOYSTICK_RADIUS = 65;
+    const JOYSTICK_DEAD   = 10;
+
     // --- Player ---
     class Player {
         constructor(x, y, width, height) {
@@ -574,6 +580,60 @@ window.addEventListener('DOMContentLoaded', function() {
         if (k === 's') keysHeld.s = false;
         if (k === 'd') keysHeld.d = false;
     });
+
+    // --- Touch Controls (dual-zone) ---
+    function touchCanvasPos(touch) {
+        const r = gameCanvas.getBoundingClientRect();
+        return { x: touch.clientX - r.left, y: touch.clientY - r.top };
+    }
+
+    function handleTouchStart(e) {
+        e.preventDefault();
+        Array.from(e.changedTouches).forEach(touch => {
+            const { x, y } = touchCanvasPos(touch);
+            if (x < canvasWidth / 2) {
+                if (!leftTouch) leftTouch = { id: touch.identifier, originX: x, originY: y, dx: 0, dy: 0 };
+            } else {
+                if (!rightTouch) {
+                    rightTouch = { id: touch.identifier };
+                    cursorPosX = x; cursorPosY = y;
+                    mouseIsDown = true;
+                    if (state.jammed) ventOverheat(); else fireAction();
+                }
+            }
+        });
+    }
+
+    function handleTouchMove(e) {
+        e.preventDefault();
+        Array.from(e.changedTouches).forEach(touch => {
+            const { x, y } = touchCanvasPos(touch);
+            if (leftTouch && touch.identifier === leftTouch.id) {
+                leftTouch.dx = x - leftTouch.originX;
+                leftTouch.dy = y - leftTouch.originY;
+            } else if (rightTouch && touch.identifier === rightTouch.id) {
+                cursorPosX = x; cursorPosY = y;
+            }
+        });
+    }
+
+    function handleTouchEnd(e) {
+        e.preventDefault();
+        Array.from(e.changedTouches).forEach(touch => {
+            if (leftTouch  && touch.identifier === leftTouch.id)  leftTouch  = null;
+            if (rightTouch && touch.identifier === rightTouch.id) { rightTouch = null; mouseIsDown = false; }
+        });
+    }
+
+    gameCanvas.addEventListener('touchstart',  handleTouchStart, { passive: false });
+    gameCanvas.addEventListener('touchmove',   handleTouchMove,  { passive: false });
+    gameCanvas.addEventListener('touchend',    handleTouchEnd,   { passive: false });
+    gameCanvas.addEventListener('touchcancel', handleTouchEnd,   { passive: false });
+
+    // Try to lock orientation to landscape (Android Chrome; Safari ignores gracefully)
+    if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+    }
 
 
 
@@ -1990,6 +2050,14 @@ function spawnExplosion(x, y) {
         if (keysHeld.s) dy += spd;
         if (keysHeld.a) dx -= spd;
         if (keysHeld.d) dx += spd;
+        if (leftTouch) {
+            const mag = Math.hypot(leftTouch.dx, leftTouch.dy);
+            if (mag > JOYSTICK_DEAD) {
+                const norm = Math.min(mag, JOYSTICK_RADIUS) / JOYSTICK_RADIUS;
+                dx += (leftTouch.dx / mag) * spd * norm;
+                dy += (leftTouch.dy / mag) * spd * norm;
+            }
+        }
         if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
         playerX += dx;
         playerY += dy;
@@ -2056,6 +2124,33 @@ function spawnExplosion(x, y) {
         renderGatlingMuzzleFlash();
         renderParticles();
         ctx.restore();
+        // Joystick overlay — screen space, drawn after world camera restore
+        if (leftTouch) {
+            const ox  = leftTouch.originX, oy = leftTouch.originY;
+            const mag = Math.hypot(leftTouch.dx, leftTouch.dy);
+            const clamp = Math.min(mag, JOYSTICK_RADIUS);
+            const kx  = mag > 0 ? ox + (leftTouch.dx / mag) * clamp : ox;
+            const ky  = mag > 0 ? oy + (leftTouch.dy / mag) * clamp : oy;
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.arc(ox, oy, JOYSTICK_RADIUS, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+            ctx.lineWidth   = 2;
+            ctx.stroke();
+            ctx.fillStyle   = 'rgba(255,255,255,0.04)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(kx, ky, 24, 0, Math.PI * 2);
+            ctx.fillStyle   = 'rgba(255,255,255,0.18)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+            ctx.lineWidth   = 2;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
         if (mouseIsDown) fireAction();
         hitDetect();
         checkLevelUp();
@@ -2153,6 +2248,7 @@ function spawnExplosion(x, y) {
         };
         playerX = centerX; playerY = centerY;
         keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
+        leftTouch = null; rightTouch = null; mouseIsDown = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
         miniTurrets = []; flameTurrets = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
