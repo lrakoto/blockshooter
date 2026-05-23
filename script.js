@@ -606,6 +606,14 @@ window.addEventListener('DOMContentLoaded', function() {
             } else {
                 if (!rightTouch) {
                     rightTouch = { id: touch.identifier, originX: x, originY: y, dx: 0, dy: 0 };
+                    // Immediately point turret toward touch position relative to screen center
+                    // so the first shot goes in the intuitive direction without needing a drag
+                    const ix = x - centerX, iy = y - centerY;
+                    const im = Math.hypot(ix, iy);
+                    if (im > 0) {
+                        cursorPosX = centerX + (ix / im) * 9999;
+                        cursorPosY = centerY + (iy / im) * 9999;
+                    }
                     mouseIsDown = true;
                     if (state.jammed) ventOverheat(); else fireAction();
                 }
