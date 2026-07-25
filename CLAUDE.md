@@ -29,21 +29,27 @@ README.md    — Dev notes and code walkthrough
 ## Architecture (script.js)
 Everything lives inside one `DOMContentLoaded` listener. Key pieces:
 
-- **Enemy system**: Two parallel arrays `xCoords[]` / `yCoords[]` track enemy positions. Enemies are spawned by pushing random coords at intervals (`difficulty` ms). Rendered via `spawnNewEnemy()`.
-- **Enemy movement**: `moveEnemy()` runs every 20ms. Uses `Math.atan2` to calculate angle toward center, then updates each coord via `splice`. Speed controlled by `perFrameDistance`.
-- **Player**: `Player` class instance (`playerTurret`) centered on canvas, renders `turret.webp`.
-- **Shooting**: `mousedown` fires `fireAction()`. Hit detection checks if click coords fall within ±8px of any enemy coord. Hits move enemy coords to `30000` (off-screen removal workaround).
-- **Game loop**: `setInterval(gameLoop, 30)` — clears canvas, renders player/barrel/target, spawns enemies, checks hit/win/lose conditions.
-- **Difficulty scaling**: `diffFn()` increases `perFrameDistance` at score milestones (500, 1000, 1500, 2500, 3000, 4000+).
-- **Win condition**: score >= 3000 and health > 0.
-- **Lose condition**: health <= 1 and lives === 0 (player starts with 3 lives, loses 5% health per enemy hit).
+- **Enemy system**: `enemies[]` array of objects with `{ x, y, hp, maxHp, behavior, ... }`. Spawned by `spawnEnemy()` on an interval. Behaviors: `normal`, `zigzag` (pyramid), `zipper` (sphere), `tank` (shoots back). Removed via `Array.filter` when `hp <= 0`.
+- **Enemy movement**: `moveEnemies()` runs every 20ms. Uses `Math.atan2` to head toward `(playerX, playerY)` (camera-follows-player world). Speed via `state.perFrameDistance`, capped at `ENEMY_MAX_SPEED = 0.76`.
+- **Player**: `Player` class instance (`playerTurret`) drawn at screen center `(centerX, centerY)`. World scrolls around player via `playerX`/`playerY`. WASD or left touch joystick to move.
+- **Shooting**: `mousedown`/touch fires `fireAction()` — ray-style bullets in `gatlingBullets[]` with `progress` interpolation. Hit detection via `rayHitsEnemy()` (point-to-segment distance). Tank enemies shoot back via `enemyBullets[]`.
+- **Game loop**: three `setInterval`s — `gameLoop` (30ms render+logic), `spawnEnemy` (level-scaled interval), `moveEnemies` (20ms).
+- **Difficulty scaling**: `LEVELS[]` table (8 entries) — `killsToNext`, `spawnInterval`, `toughChance`, `eliteChance`. Beyond level 8, `getLevelDef()` extrapolates: HP scales up, spawn interval shrinks, speed capped.
+- **Story / Cutscenes**: every 5 levels (5, 10, 15, 20, 25, 30), a comms-feed interstitial with typewriter text plays before the shop. `STORY_BEATS[]` array defines panels with speaker + text. Click SKIP to fast-forward typing, click NEXT/CONTINUE to advance panels. After the last panel, bonus credits are awarded and the shop opens. `isStoryLevel()` checks if a level triggers a cutscene.
+- **Lose condition**: `health <= 0 && lives === 0`. Player starts with 3 lives; each death resets health to 100 and grants 120 frames invincibility.
+- **Upgrades shop**: between levels, `populateUpgrades()` offers stat upgrades (UPGRADES[]), turret purchases (Gatling/Shotgun), and turret upgrades (TURRET_UPGRADES[]). Credits earned per kill + level completion bonus.
+- **Wave blast**: `triggerWave()` (E key) — radial push + non-lethal HP damage to enemies in range, 12s cooldown.
+- **Heat mechanic**: firing builds `state.heat`; at 100 the gun jams for `jamDuration` frames. `ventOverheat()` (R key) clears the jam if pressed during the VENT_ZONE window (0.38-0.62 of jam progress).
+- **Audio**: Web Audio API synth — `playExplosionSound`, `playGatlingSound`, `playBulletHitSound`, `playShotgunSound`, `playRailgunSound`, `playBoundaryHitSound`, `playWaveReadySound`. `audioCtx` lazily created on first user gesture.
+- **Mobile**: dual-zone touch — left half = movement joystick, right half = trackpad-style aim. Portrait shows a rotate prompt.
+- **Theme**: dark (default) / light toggle, persisted in localStorage. High score persisted in localStorage.
 
 ## Known Issues / Notes
-- Laser sound (`laserSound.play()`) is commented out in `fireAction` — browser autoplay policy.
-- `lives` initializes to `2` in variable declaration but resets to `3` in `defaults()` — the start value is effectively overridden when the game begins.
-- Enemies are "removed" by setting their coords to `30000` (off-canvas) rather than spliced out — they continue to exist in the arrays.
-- `this.setInterval` calls at module scope (lines 79, 107) run on page load before the game starts.
-- Typo in win screen: "Congrationlations" (index.html line 19).
+- Game loop uses a single `requestAnimationFrame` with fixed-timestep accumulators (move 20ms, logic 30ms, spawn level-scaled). Old triple-`setInterval` approach replaced.
+- `enemyBullets[]` capped at 200 to prevent unbounded growth.
+- Win screen removed; replaced by story cutscenes every 5 levels with bonus credits.
+- Start menu copy lists all upgrade types and mentions ESC to pause and WASD movement.
+- Pause available via ESC (desktop) or tapping the pause overlay (mobile).
 
 ## Deployment
 ```bash

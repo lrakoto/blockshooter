@@ -4,12 +4,15 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- DOM Elements ---
     const gameCanvas     = document.querySelector('#gamecanvas');
     const startMenu      = document.querySelector('#startmenu');
-    const winMenu        = document.querySelector('#winmenu');
-    const loseMenu       = document.querySelector('#losemenu');
+    const cutscene       = document.querySelector('#cutscene');
+    const cutsceneLabel   = document.querySelector('#cutscene-label');
+    const cutsceneSpeaker = document.querySelector('#cutscene-speaker');
+    const cutsceneText    = document.querySelector('#cutscene-text');
+    const cutsceneProgress= document.querySelector('#cutscene-progress');
+    const cutsceneBtn     = document.querySelector('#cutscene-continue');
+    const loseMenu        = document.querySelector('#losemenu');
     const levelMenu      = document.querySelector('#levelmenu');
-    const returnMenuWin  = document.querySelector('#returntomenuwin');
     const returnMenuLose = document.querySelector('#returntomenulose');
-    const resetWin       = document.querySelector('#resetwin');
     const resetLose      = document.querySelector('#resetlose');
     const continueBtn    = document.querySelector('#continuebutton');
     const topBar         = document.querySelector('#topbar');
@@ -33,6 +36,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const controlsOpen     = document.querySelector('#controls-open');
     const controlsToggle   = document.querySelector('#controls-toggle');
     const themeToggle      = document.querySelector('#theme-toggle');
+    const pauseOverlay     = document.querySelector('#pause-overlay');
     const ctx              = gameCanvas.getContext('2d');
     const miniturretCountEl = document.querySelector('#miniturret-count');
 
@@ -42,30 +46,6 @@ window.addEventListener('DOMContentLoaded', function() {
     function ensureAudioCtx() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
-    }
-
-    function playLaserSound() {
-        // retained but unused
-        ensureAudioCtx();
-        const t = audioCtx.currentTime;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(1400, t);
-        osc.frequency.exponentialRampToValueAtTime(80, t + 0.12);
-        gain.gain.setValueAtTime(0.25, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-        osc.start(t); osc.stop(t + 0.15);
-        const osc2 = audioCtx.createOscillator();
-        const gain2 = audioCtx.createGain();
-        osc2.connect(gain2); gain2.connect(audioCtx.destination);
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(2800, t);
-        osc2.frequency.exponentialRampToValueAtTime(200, t + 0.08);
-        gain2.gain.setValueAtTime(0.1, t);
-        gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-        osc2.start(t); osc2.stop(t + 0.08);
     }
 
     function playExplosionSound() {
@@ -470,9 +450,13 @@ window.addEventListener('DOMContentLoaded', function() {
     let waveRings         = [];
     let enemyBullets      = [];
 
-    let gameLoopInt = null;
-    let spawnInt    = null;
-    let moveInt     = null;
+    let rafId = null;
+    let lastTime = 0;
+    let moveAcc = 0;
+    let logicAcc = 0;
+    let spawnAcc = 0;
+    let gameRunning = false;
+    let paused      = false;
     let cursorPosX = playerX;
     let cursorPosY = 0;
     let mouseIsDown = false;
@@ -576,6 +560,7 @@ window.addEventListener('DOMContentLoaded', function() {
         const k = e.key.toLowerCase();
         if (k === 'r') ventOverheat();
         if (k === 'e') triggerWave();
+        if (k === 'escape') togglePause();
         if (k === 'w') keysHeld.w = true;
         if (k === 'a') keysHeld.a = true;
         if (k === 's') keysHeld.s = true;
@@ -781,7 +766,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 e.y += Math.sin(angle) * speed * 0.35;
                 // Fire at player every ~3 seconds (moveEnemies runs at 20ms, so 150 ticks)
                 e.fireTick = (e.fireTick || 0) + 1;
-                if (e.fireTick >= 150) {
+                if (e.fireTick >= 150 && enemyBullets.length < 200) {
                     e.fireTick = 0;
                     const bAngle = Math.atan2(playerY - e.y, playerX - e.x);
                     const spread = (Math.random() - 0.5) * 0.3;
@@ -955,15 +940,6 @@ window.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // --- Drawing Helpers ---
-    function turretBarrel(x1, y1, x2, y2, maxLen, color, lineWidth) {
-        const vx = x2 - x1, vy = y2 - y1;
-        const mag = Math.sqrt(vx * vx + vy * vy);
-        const scale = mag > maxLen ? maxLen / mag : 1;
-        ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + vx * scale, y1 + vy * scale); ctx.stroke();
-    }
-
     function drawPlayerBarrel() {
         const dx  = cursorPosX - centerX;
         const dy  = cursorPosY - centerY;
@@ -990,22 +966,6 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.shadowColor = 'rgba(200,225,240,0.8)';
         ctx.shadowBlur  = 8;
         ctx.fillRect(26, -4, 4, 8);
-        ctx.restore();
-    }
-
-    function drawMuzzleFlash(x, y) {
-        ctx.save();
-        ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 25;
-        ctx.globalAlpha = 0.4; ctx.fillStyle = '#88ccff';
-        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 0.95; ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#aaddff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.75;
-        for (let i = 0; i < 6; i++) {
-            const a = (Math.PI / 3) * i;
-            ctx.beginPath(); ctx.moveTo(x, y);
-            ctx.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14); ctx.stroke();
-        }
         ctx.restore();
     }
 
@@ -1772,19 +1732,6 @@ function spawnExplosion(x, y) {
 
         const tx = cursorPosX, ty = cursorPosY;
 
-        // Muzzle flash at barrel tip
-        const fireInterval = setInterval(function() {
-            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 30, 'white', 5);
-            turretBarrel(centerX, centerY, cursorPosX, cursorPosY, 25, 'black', 5);
-            const dx = cursorPosX - centerX, dy = cursorPosY - centerY;
-            const mag = Math.sqrt(dx * dx + dy * dy);
-            if (mag > 0) {
-                const s = Math.min(25, mag) / mag;
-                drawMuzzleFlash(centerX + dx * s, centerY + dy * s);
-            }
-        }, 10);
-        setTimeout(() => clearInterval(fireInterval), 50);
-
         // Apply spread — random angular offset within ±spread/2
         const baseAngle = Math.atan2(ty - centerY, tx - centerX);
         const spreadOffset = (Math.random() - 0.5) * state.spread;
@@ -1857,6 +1804,124 @@ function spawnExplosion(x, y) {
         flameTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
     }
 
+    // --- Story / Cutscenes ---
+    // Triggered every 5 levels. Each beat has panels with speaker + text.
+    const STORY_BEATS = [
+        { level: 5, label: 'INCOMING TRANSMISSION', panels: [
+            { speaker: 'COMMAND', text: 'Cadet, you\'ve held the line longer than we expected. Command is... impressed.' },
+            { speaker: 'COMMAND', text: 'Reinforcements are unavailable. Something is jamming our drop ships. You\'re on your own for now. Hold steady.' },
+            { speaker: 'COMMAND', text: 'Bonus credits dispatched. Spend them wisely — this is just the beginning.' },
+        ]},
+        { level: 10, label: 'PRIORITY ALERT', panels: [
+            { speaker: 'COMMAND', text: 'New intel. The blocks aren\'t spawning randomly. Their formations are coordinated.' },
+            { speaker: 'COMMAND', text: 'We\'re picking up a signal buried in the static. Something out there is directing them. We don\'t know what.' },
+            { speaker: 'COMMAND', text: 'Whatever it is, it noticed you. Keep fighting. We need to buy time to trace that signal.' },
+        ]},
+        { level: 15, label: 'SIGNAL INTERCEPTED', panels: [
+            { speaker: '???', text: '...can you... hear me through the... static...?' },
+            { speaker: '???', text: 'I am not your enemy. The blocks are not an invasion. They are a language.' },
+            { speaker: 'COMMAND', text: 'Cadet, ignore that transmission! It\'s a trick. Continue fighting. That is an order.' },
+            { speaker: '???', text: 'You will understand soon. Survive a little longer. I am trying to reach you.' },
+        ]},
+        { level: 20, label: 'DIRECT CONTACT', panels: [
+            { speaker: 'THE BLOCKMASTER', text: 'You have survived twenty waves. No cadet has ever lasted this long against us.' },
+            { speaker: 'THE BLOCKMASTER', text: 'This was never an invasion. It was a trial. A test of worth.' },
+            { speaker: 'THE BLOCKMASTER', text: 'You passed. But the real test is ahead. The blocks will come faster now. Harder. Show me what you truly are.' },
+        ]},
+        { level: 25, label: 'THE TRUTH', panels: [
+            { speaker: 'THE BLOCKMASTER', text: 'You were never defending your world, cadet. You were being recruited.' },
+            { speaker: 'THE BLOCKMASTER', text: 'My blocks are soldiers, not enemies. They fought you to measure your strength. And you measured well.' },
+            { speaker: 'THE BLOCKMASTER', text: 'Join me. The universe is full of worlds that need breaking. And I need a partner who can hold the line.' },
+            { speaker: 'COMMAND', text: 'Cadet... don\'t listen. Come home. Please.' },
+        ]},
+        { level: 30, label: 'CHOICE', panels: [
+            { speaker: 'THE BLOCKMASTER', text: 'Thirty waves. You are beyond anything I have ever forged. The blocks obey you now as much as me.' },
+            { speaker: 'THE BLOCKMASTER', text: 'But I will not make you choose. Not yet. Fight on. Prove you are worth the darkness between the stars.' },
+        ]},
+    ];
+
+    let cutsceneState = { beatIdx: 0, panelIdx: 0, typing: false, typeTimer: null };
+
+    function getStoryBeat(level) {
+        // Find the highest-multiple story beat that the level has reached
+        let beat = null;
+        for (const b of STORY_BEATS) {
+            if (level >= b.level) beat = b;
+        }
+        return beat;
+    }
+
+    function isStoryLevel(level) {
+        return STORY_BEATS.some(b => b.level === level);
+    }
+
+    function startCutscene(beat) {
+        cutsceneState.beatIdx = STORY_BEATS.indexOf(beat);
+        cutsceneState.panelIdx = 0;
+        cutsceneLabel.textContent = beat.label;
+        cutscene.style.display = 'flex';
+        hideGame();
+        showCutscenePanel();
+    }
+
+    function showCutscenePanel() {
+        const beat = STORY_BEATS[cutsceneState.beatIdx];
+        const panel = beat.panels[cutsceneState.panelIdx];
+        cutsceneSpeaker.textContent = panel.speaker;
+        cutsceneText.textContent = '';
+        cutsceneText.classList.remove('done');
+        cutsceneProgress.textContent = `${cutsceneState.panelIdx + 1} / ${beat.panels.length}`;
+        cutsceneBtn.textContent = 'SKIP';
+
+        // Typewriter effect
+        if (cutsceneState.typeTimer) clearInterval(cutsceneState.typeTimer);
+        cutsceneState.typing = true;
+        let charIdx = 0;
+        cutsceneState.typeTimer = setInterval(() => {
+            if (charIdx >= panel.text.length) {
+                clearInterval(cutsceneState.typeTimer);
+                cutsceneState.typeTimer = null;
+                cutsceneState.typing = false;
+                cutsceneText.classList.add('done');
+                const isLast = cutsceneState.panelIdx >= beat.panels.length - 1;
+                cutsceneBtn.textContent = isLast ? 'CONTINUE \u25B6' : 'NEXT \u25B6';
+                return;
+            }
+            cutsceneText.textContent += panel.text[charIdx];
+            charIdx++;
+        }, 28);
+    }
+
+    function advanceCutscene() {
+        const beat = STORY_BEATS[cutsceneState.beatIdx];
+
+        // If still typing, skip to full text
+        if (cutsceneState.typing) {
+            clearInterval(cutsceneState.typeTimer);
+            cutsceneState.typeTimer = null;
+            cutsceneState.typing = false;
+            cutsceneText.textContent = beat.panels[cutsceneState.panelIdx].text;
+            cutsceneText.classList.add('done');
+            const isLast = cutsceneState.panelIdx >= beat.panels.length - 1;
+            cutsceneBtn.textContent = isLast ? 'CONTINUE \u25B6' : 'NEXT \u25B6';
+            return;
+        }
+
+        // Advance to next panel
+        cutsceneState.panelIdx++;
+        if (cutsceneState.panelIdx < beat.panels.length) {
+            showCutscenePanel();
+        } else {
+            // Cutscene finished — give bonus and show shop
+            cutscene.style.display = 'none';
+            const bonus = 100 + state.level * 15;
+            state.credits += bonus;
+            showLevelUpScreen();
+        }
+    }
+
+    cutsceneBtn.addEventListener('click', advanceCutscene);
+
     // --- Level Up ---
     function checkLevelUp() {
         const def = getLevelDef();
@@ -1867,7 +1932,12 @@ function spawnExplosion(x, y) {
         state.level++;
         state.levelKills = 0;
         levelDisplay.textContent = state.level;
-        showLevelUpScreen();
+        if (isStoryLevel(state.level)) {
+            const beat = getStoryBeat(state.level);
+            startCutscene(beat);
+        } else {
+            showLevelUpScreen();
+        }
     }
 
     function showLevelUpScreen() {
@@ -1875,6 +1945,7 @@ function spawnExplosion(x, y) {
         levelDesc.textContent = LEVEL_DESCS[state.level - 1] || '';
         populateUpgrades();
         levelMenu.style.display = 'block';
+        pauseOverlay.style.display = 'none';
         hideGame();
     }
 
@@ -2322,21 +2393,83 @@ function spawnExplosion(x, y) {
         healthBar.style.width = '100%';
         streakDisplay.classList.remove('visible');
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        paused = false;
+        pauseOverlay.style.display = 'none';
+        cutscene.style.display = 'none';
+        if (cutsceneState.typeTimer) { clearInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
     }
 
     function clearAllIntervals() {
-        clearInterval(gameLoopInt);
-        clearInterval(spawnInt);
-        clearInterval(moveInt);
-        gameLoopInt = null; spawnInt = null; moveInt = null;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        gameRunning = false;
+    }
+
+    function getSpawnInterval() {
+        return getLevelDef().spawnInterval;
+    }
+
+    // Single rAF loop — fixed-timestep accumulator.
+    // Move ticks at 20ms, logic at 30ms, spawn at level-scaled interval.
+    // Render every native frame (smooth on high-refresh displays).
+    function gameFrame(timestamp) {
+        if (!gameRunning || paused) return;
+        if (!lastTime) lastTime = timestamp;
+        const dt = Math.min(timestamp - lastTime, 100); // clamp tab-switch gaps
+        lastTime = timestamp;
+
+        moveAcc  += dt;
+        logicAcc += dt;
+        spawnAcc += dt;
+
+        // Enemy movement — 20ms fixed
+        let moveBudget = 5; // safety cap to avoid spiral-of-death
+        while (moveAcc >= 20 && moveBudget-- > 0) {
+            moveEnemies();
+            moveAcc -= 20;
+        }
+        if (moveBudget < 0) moveAcc = 0; // gave up — drop backlog
+
+        // Spawn — level-scaled interval
+        const spawnInterval = getSpawnInterval();
+        if (spawnAcc >= spawnInterval) {
+            spawnEnemy();
+            spawnAcc -= spawnInterval;
+            if (spawnAcc > spawnInterval * 3) spawnAcc = 0; // drop backlog
+        }
+
+        // Logic + render — 30ms fixed (the old gameLoop)
+        let logicBudget = 5;
+        while (logicAcc >= 30 && logicBudget-- > 0) {
+            gameLoop();
+            logicAcc -= 30;
+        }
+        if (logicBudget < 0) logicAcc = 0;
+
+        rafId = requestAnimationFrame(gameFrame);
     }
 
     function startIntervals() {
-        const def = getLevelDef();
         state.perFrameDistance = Math.min(ENEMY_MAX_SPEED, LEVEL_SPEEDS[Math.min(state.level - 1, LEVEL_SPEEDS.length - 1)]);
-        gameLoopInt = setInterval(gameLoop, 30);
-        spawnInt    = setInterval(spawnEnemy, def.spawnInterval);
-        moveInt     = setInterval(moveEnemies, 20);
+        moveAcc = 0; logicAcc = 0; spawnAcc = 0; lastTime = 0;
+        gameRunning = true;
+        paused      = false;
+        rafId = requestAnimationFrame(gameFrame);
+    }
+
+    function togglePause() {
+        if (!gameRunning) return;
+        if (paused) {
+            // Resume
+            paused = false;
+            pauseOverlay.style.display = 'none';
+            lastTime = 0; // reset so dt doesn't jump after resume
+            rafId = requestAnimationFrame(gameFrame);
+        } else {
+            // Pause — cancel rAF, keep state
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+            paused = true;
+            pauseOverlay.style.display = 'flex';
+        }
     }
 
     // --- Button Listeners ---
@@ -2350,21 +2483,10 @@ function spawnExplosion(x, y) {
         showGame(); startIntervals();
     });
 
-    returnMenuWin.addEventListener('click', function() {
-        winMenu.style.display = 'none';
-        startMenu.style.display = 'block';
-        hideGame(); defaults();
-    });
-
     returnMenuLose.addEventListener('click', function() {
         loseMenu.style.display = 'none';
         startMenu.style.display = 'block';
         hideGame(); defaults();
-    });
-
-    resetWin.addEventListener('click', function() {
-        winMenu.style.display = 'none';
-        showGame(); defaults(); startIntervals();
     });
 
     resetLose.addEventListener('click', function() {
@@ -2393,6 +2515,9 @@ function spawnExplosion(x, y) {
         applyTheme(document.body.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
     });
 
+    // Pause overlay — click/tap to resume
+    pauseOverlay.addEventListener('click', () => togglePause());
+
     // --- End States ---
     function getHighScore() {
         return parseInt(localStorage.getItem('blockshooter_hs') || '0');
@@ -2405,6 +2530,9 @@ function spawnExplosion(x, y) {
 
     function gameLose() {
         clearAllIntervals();
+        pauseOverlay.style.display = 'none';
+        cutscene.style.display = 'none';
+        if (cutsceneState.typeTimer) { clearInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
         const isNew = saveHighScore(state.score);
         const hs    = getHighScore();
         document.querySelector('#lose-score').textContent     = `Score: ${state.score}  |  Level ${state.level}`;

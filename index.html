@@ -18,13 +18,18 @@
     </div>
     <main>
         <h1 id="gametitle">Block Shooter</h1>
-        <section id="winmenu">
-            <div class="innerwrap bord">
-                <div>
-                    <h4>Congratulations!</h4>
-                    <p>All blocks cleared!</p>
-                    <button id="returntomenuwin">Return To Main Menu</button>
-                    <button id="resetwin">Play Again</button>
+        <section id="cutscene">
+            <div class="cutscene-wrap">
+                <div class="cutscene-header">
+                    <span class="cutscene-label" id="cutscene-label">INCOMING TRANSMISSION</span>
+                </div>
+                <div class="cutscene-body">
+                    <p id="cutscene-speaker"></p>
+                    <p id="cutscene-text"></p>
+                </div>
+                <div class="cutscene-footer">
+                    <span id="cutscene-progress"></span>
+                    <button id="cutscene-continue">CONTINUE &#9654;</button>
                 </div>
             </div>
         </section>
@@ -44,10 +49,10 @@
                 <div class="cubeimg"></div>
                 <div style="overflow:auto">
                     <h4>Welcome Cadet!</h4>
-                    <p>Evil blocks have invaded. Survive as long as you can — levels never end. Between waves, pick an upgrade: accuracy, damage, fire rate, or heat sink.</p>
-                    <p>Watch your heat — overfiring jams your Gatling. Buy Gatling and Shotgun turrets in the upgrade shop between waves. Press E for a directional wave blast.</p>
+                    <p>Evil blocks have invaded. Survive as long as you can — levels never end. Between waves, spend credits on upgrades: accuracy, damage, fire rate, heat sink, caliber, speed, or wave power.</p>
+                    <p>Deploy Gatling and Shotgun turrets in the upgrade shop. Watch your heat — overfiring jams your Gatling. Press E for a directional wave blast, ESC to pause.</p>
                     <h4>Controls</h4>
-                    <p>Aim with mouse. Click or hold to fire.</p>
+                    <p>Aim with mouse. Click or hold to fire. WASD to move.</p>
                     <button id="startbutton">Deploy</button>
                 </div>
             </div>
@@ -81,6 +86,14 @@
         </section>
         <button id="theme-toggle">&#9711; LIGHT</button>
         <button id="controls-open">? CONTROLS</button>
+        <div id="pause-overlay">
+            <div class="innerwrap bord col">
+                <div>
+                    <h4>PAUSED</h4>
+                    <p>Press ESC or tap here to resume</p>
+                </div>
+            </div>
+        </div>
         <div id="controls-legend">
             <button id="controls-toggle">×</button>
             <div id="controls-content">
@@ -90,6 +103,7 @@
                 <div class="ctrl-row"><span class="ctrl-key">HEAT</span><span class="ctrl-desc">Don't overheat!</span></div>
                 <div class="ctrl-row"><span class="ctrl-key">R</span><span class="ctrl-desc">Vent overheat</span></div>
                 <div class="ctrl-row"><span class="ctrl-key">E</span><span class="ctrl-desc">Wave blast</span></div>
+                <div class="ctrl-row"><span class="ctrl-key">ESC</span><span class="ctrl-desc">Pause</span></div>
             </div>
         </div>
     </main>
