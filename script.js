@@ -457,6 +457,8 @@ window.addEventListener('DOMContentLoaded', function() {
     let spawnAcc = 0;
     let gameRunning = false;
     let paused      = false;
+    let damageFlash = 0;
+    let hitStop     = 0;
     let cursorPosX = playerX;
     let cursorPosY = 0;
     let mouseIsDown = false;
@@ -580,7 +582,7 @@ window.addEventListener('DOMContentLoaded', function() {
         return { x: touch.clientX - r.left, y: touch.clientY - r.top };
     }
 
-    const AIM_DEAD = 4; // px of jitter filter before aim updates
+    const AIM_DEAD = 8; // px of jitter filter before aim updates
 
     function handleTouchStart(e) {
         e.preventDefault();
@@ -701,14 +703,15 @@ window.addEventListener('DOMContentLoaded', function() {
     // --- Enemies ---
     function spawnEnemy() {
         let x, y;
-        // Spawn in a ring around the player in world space (just outside the visible area)
-        const spawnR = Math.max(canvasWidth, canvasHeight) * 0.6;
+        // Spawn just outside the visible area — close enough to reach the player
+        // in reasonable time but far enough to appear from off-screen
+        const spawnR = Math.min(canvasWidth, canvasHeight) * 0.35;
         do {
             const angle = Math.random() * Math.PI * 2;
-            const dist  = 180 + Math.random() * spawnR;
+            const dist  = 120 + Math.random() * spawnR;
             x = playerX + Math.cos(angle) * dist;
             y = playerY + Math.sin(angle) * dist;
-        } while (Math.hypot(x - playerX, y - playerY) < 280);
+        } while (Math.hypot(x - playerX, y - playerY) < 160);
         let behavior = 'normal';
         const br        = Math.random();
         const tankChance = Math.min(0.07, (state.level - 2) * 0.012);
@@ -1483,6 +1486,20 @@ window.addEventListener('DOMContentLoaded', function() {
         const waveElapsed  = Date.now() - (state.waveLastUsed || 0);
         const waveReady    = waveElapsed >= WAVE_COOLDOWN;
         const waveProgress = Math.min(1, waveElapsed / WAVE_COOLDOWN);
+
+        // Charge glow — subtle cyan radial that intensifies as wave recharges
+        if (waveProgress > 0.1) {
+            const glowR = 30 + waveProgress * 12;
+            const glowA = waveReady ? 0.12 + 0.06 * Math.sin(Date.now() / 220) : waveProgress * 0.08;
+            const wgrad = ctx.createRadialGradient(centerX, centerY, 8, centerX, centerY, glowR);
+            wgrad.addColorStop(0, `rgba(0,200,255,${glowA})`);
+            wgrad.addColorStop(1, 'rgba(0,200,255,0)');
+            ctx.fillStyle = wgrad;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, glowR, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         const wR = 54;
         ctx.save();
         // Full background ring always drawn
@@ -1665,6 +1682,7 @@ function spawnExplosion(x, y) {
             state.kills++;
             state.streak++;
             state.streakFrames = 90;
+            hitStop = 2;
             const multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
             addScore(Math.round(e.maxHp * 100 * multiplier));
             state.credits += 8 + (e.maxHp - 3) * 5; // 8 / 13 / 23+ per kill
@@ -1733,7 +1751,27 @@ function spawnExplosion(x, y) {
         const tx = cursorPosX, ty = cursorPosY;
 
         // Apply spread — random angular offset within ±spread/2
-        const baseAngle = Math.atan2(ty - centerY, tx - centerX);
+        let baseAngle = Math.atan2(ty - centerY, tx - centerX);
+
+        // Mobile auto-aim: if firing via touch, nudge aim toward nearest enemy
+        // within a narrow cone (15px at screen distance)
+        if (rightTouch) {
+            let bestDot = Math.cos(0.15); // ~8.6° cone
+            let bestEnemy = null;
+            for (const e of enemies) {
+                const ex = e.x - playerX, ey = e.y - playerY;
+                const ed = Math.hypot(ex, ey);
+                if (ed < 1 || ed > 500) continue;
+                const eAngle = Math.atan2(ey, ex);
+                const dot = Math.cos(eAngle - baseAngle);
+                if (dot > bestDot) { bestDot = dot; bestEnemy = e; }
+            }
+            if (bestEnemy) {
+                const ex = bestEnemy.x - playerX, ey = bestEnemy.y - playerY;
+                baseAngle = Math.atan2(ey, ex);
+            }
+        }
+
         const spreadOffset = (Math.random() - 0.5) * state.spread;
         const fireAngle = baseAngle + spreadOffset;
         const fireDx = Math.cos(fireAngle), fireDy = Math.sin(fireAngle);
@@ -1799,6 +1837,7 @@ function spawnExplosion(x, y) {
             : 0;
         state.health = Math.max(0, state.health - (5 + bonus));
         healthBar.style.width = `${state.health}%`;
+        damageFlash = 12;
         // Splash: all deployed turrets take 3 damage
         miniTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
         flameTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
@@ -1914,7 +1953,7 @@ function spawnExplosion(x, y) {
         } else {
             // Cutscene finished — give bonus and show shop
             cutscene.style.display = 'none';
-            const bonus = 100 + state.level * 15;
+            const bonus = 50 + state.level * 10;
             state.credits += bonus;
             showLevelUpScreen();
         }
@@ -2172,6 +2211,18 @@ function spawnExplosion(x, y) {
     function gameLoop() {
         updatePlayerPosition();
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+        // Damage vignette — red radial gradient fading from edges
+        if (damageFlash > 0) {
+            const a = (damageFlash / 12) * 0.45;
+            const grad = ctx.createRadialGradient(centerX, centerY, Math.min(canvasWidth, canvasHeight) * 0.25, centerX, centerY, Math.max(canvasWidth, canvasHeight) * 0.7);
+            grad.addColorStop(0, 'rgba(255,0,0,0)');
+            grad.addColorStop(1, `rgba(255,0,0,${a})`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            damageFlash--;
+        }
+
         renderTurretArea();
 
         // Turret heat glow + overheat blink/shrink
@@ -2394,6 +2445,8 @@ function spawnExplosion(x, y) {
         streakDisplay.classList.remove('visible');
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         paused = false;
+        damageFlash = 0;
+        hitStop = 0;
         pauseOverlay.style.display = 'none';
         cutscene.style.display = 'none';
         if (cutsceneState.typeTimer) { clearInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
@@ -2421,17 +2474,21 @@ function spawnExplosion(x, y) {
         logicAcc += dt;
         spawnAcc += dt;
 
+        // Hit-stop: freeze movement and spawns briefly on kill, keep rendering
+        const frozen = hitStop > 0;
+        if (frozen) hitStop--;
+
         // Enemy movement — 20ms fixed
         let moveBudget = 5; // safety cap to avoid spiral-of-death
         while (moveAcc >= 20 && moveBudget-- > 0) {
-            moveEnemies();
+            if (!frozen) moveEnemies();
             moveAcc -= 20;
         }
         if (moveBudget < 0) moveAcc = 0; // gave up — drop backlog
 
         // Spawn — level-scaled interval
         const spawnInterval = getSpawnInterval();
-        if (spawnAcc >= spawnInterval) {
+        if (spawnAcc >= spawnInterval && !frozen) {
             spawnEnemy();
             spawnAcc -= spawnInterval;
             if (spawnAcc > spawnInterval * 3) spawnAcc = 0; // drop backlog

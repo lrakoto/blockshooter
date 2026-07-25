@@ -580,6 +580,24 @@ button{
 #pause-overlay p { font-size: 0.7em; opacity: 0.65; letter-spacing: 1px; }
 [data-theme="light"] #pause-overlay { background: rgba(180, 186, 200, 0.6); }
 
+/* ─── Small screen prompt ─────────────────────────────────────────────────── */
+#small-screen-prompt {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: #fff;
+    text-align: center;
+    font-family: 'Exo 2', sans-serif;
+    letter-spacing: 4px;
+    pointer-events: none;
+}
+
 /* ─── Rotate prompt ───────────────────────────────────────────────────────── */
 #rotate-prompt {
     display: none;
@@ -615,6 +633,9 @@ button{
 }
 @media (orientation: portrait) and (max-width: 1024px) {
     #rotate-prompt { display: flex; }
+}
+@media (max-width: 600px) and (max-height: 320px) and (orientation: landscape) {
+    #small-screen-prompt { display: flex; }
 }
 
 /* ─── Mobile / landscape phone layout ────────────────────────────────────── */
