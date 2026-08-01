@@ -20,6 +20,16 @@ window.addEventListener('DOMContentLoaded', function() {
     const deployLabel         = document.querySelector('#deploy-label');
     const deploySpeaker       = document.querySelector('#deploy-speaker');
     const deployText          = document.querySelector('#deploy-text');
+    const titleCard           = document.querySelector('#title-card');
+    const titleCardLabel      = document.querySelector('#title-card-label');
+    const titleCardLevel      = document.querySelector('#title-card-level');
+    const titleCardSub        = document.querySelector('#title-card-sub');
+    const extractionOverlay   = document.querySelector('#extraction-overlay');
+    const extractionLabel     = document.querySelector('#extraction-label');
+    const extractionSub       = document.querySelector('#extraction-sub');
+    const radioChatter        = document.querySelector('#radio-chatter');
+    const radioSpeaker        = document.querySelector('#radio-speaker');
+    const radioText           = document.querySelector('#radio-text');
     const loseMenu        = document.querySelector('#losemenu');
     const levelMenu      = document.querySelector('#levelmenu');
     const returnMenuLose = document.querySelector('#returntomenulose');
@@ -583,6 +593,13 @@ window.addEventListener('DOMContentLoaded', function() {
     const STAR_COUNT = 220;
     const STAR_FIELD = 8000;
 
+    const NEBULA_COUNT = 5;
+    const NEBULA_FIELD = 6000;
+
+    const RADIO_COOLDOWN = 4000; // ms between chatter messages
+    const TITLE_CARD_DURATION = 1800; // ms
+    const EXTRACTION_DURATION = 2200; // ms
+
     // Deployment slots — square around player, computed dynamically so they follow movement
     const SLOT_OFFSET = 62;
     function getSlotPositions() {
@@ -639,6 +656,8 @@ window.addEventListener('DOMContentLoaded', function() {
     let enemyBullets      = [];
     let damageNumbers     = [];
     let stars             = [];
+    let nebulaClouds      = [];
+    let radioQueue        = [];
 
     let rafId = null;
     let lastTime = 0;
@@ -648,7 +667,9 @@ window.addEventListener('DOMContentLoaded', function() {
     let gameRunning = false;
     let paused      = false;
     let damageFlash = 0;
+    let chromaticSplit = 0;
     let hitStop     = 0;
+    let timeScale   = 1;
     let cursorPosX = playerX;
     let cursorPosY = 0;
     let mouseIsDown = false;
@@ -924,6 +945,11 @@ window.addEventListener('DOMContentLoaded', function() {
             fireTick: Math.floor(Math.random() * 90),
             telegraph: 0,
         });
+
+        // Narrative warnings on first encounter
+        if (behavior === 'tank') maybeRadio('tankFirst');
+        if (behavior === 'zipper') maybeRadio('zipperFirst');
+        if (behavior === 'zigzag') maybeRadio('zigzagFirst');
     }
 
     function moveEnemies() {
@@ -990,6 +1016,7 @@ window.addEventListener('DOMContentLoaded', function() {
         shakeCanvas(8);
         playWaveBlastSound();
         spawnWaveParticles();
+        maybeRadio('waveUsed');
         const wRange = state.waveRange || WAVE_RANGE;
         enemies.forEach(e => {
             const dx = e.x - playerX, dy = e.y - playerY;
@@ -1895,6 +1922,30 @@ function spawnExplosion(x, y) {
         const isLight = document.body.getAttribute('data-theme') === 'light';
         const baseColor = isLight ? '#1e2030' : '#ffffff';
         ctx.save();
+
+        // Nebula / dust clouds behind stars
+        nebulaClouds.forEach(n => {
+            const half = NEBULA_FIELD / 2;
+            while (n.x < playerX - half) n.x += NEBULA_FIELD;
+            while (n.x > playerX + half) n.x -= NEBULA_FIELD;
+            while (n.y < playerY - half) n.y += NEBULA_FIELD;
+            while (n.y > playerY + half) n.y -= NEBULA_FIELD;
+            n.driftAngle += n.drift * 0.01;
+            n.x += Math.cos(n.driftAngle) * n.drift;
+            n.y += Math.sin(n.driftAngle) * n.drift;
+
+            const sx = centerX + (n.x - playerX) * n.z;
+            const sy = centerY + (n.y - playerY) * n.z;
+            const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, n.radius);
+            grad.addColorStop(0, n.color);
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            ctx.arc(sx, sy, n.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
         stars.forEach(s => {
             // Keep stars within a moving field around the player
             const half = STAR_FIELD / 2;
@@ -1973,6 +2024,106 @@ function spawnExplosion(x, y) {
             color,
             isKill,
         });
+    }
+
+    // --- Radio Chatter ---
+    const RADIO_LINES = {
+        command: [
+            { id: 'firstKill', text: 'First contact confirmed. Keep it tight, Cadet.' },
+            { id: 'firstTurret', text: 'Turret online. Let the machines share the load.' },
+            { id: 'halfway', text: 'Wave halfway cleared. Do not get comfortable.' },
+            { id: 'lowHealth', text: 'Your shielding is critical. Move, Cadet!' },
+            { id: 'firstDeath', text: 'Turret lost! Fall back and regroup.' },
+            { id: 'waveUsed', text: 'Wave discharged. Good crowd control.' },
+            { id: 'overheat', text: 'Your gun is jammed! Vent heat now!' },
+            { id: 'streak3', text: 'Kill streak confirmed. Precision pays off.' },
+            { id: 'streak5', text: 'They are falling back. Press the advantage!' },
+            { id: 'streak8', text: 'Command is watching. That is textbook.' },
+            { id: 'tankFirst', text: 'Heavy armor inbound. Focus fire on the cube.' },
+            { id: 'zipperFirst', text: 'Fast movers detected. Track the spheres.' },
+            { id: 'zigzagFirst', text: 'Evasive pyramids spotted. Lead your shots.' },
+            { id: 'levelUp', text: 'Wave suppressed. Stand by for extraction.' },
+        ],
+        blockmaster: [
+            { id: 'bm1', text: '...the static is not empty. Listen closely, cadet.' },
+            { id: 'bm2', text: 'Your Command lies. They know what these shapes are.' },
+            { id: 'bm3', text: 'Every block you break is a word. You are learning our language.' },
+            { id: 'bm4', text: 'I am closer now. Can you feel the signal in your bones?' },
+            { id: 'bm5', text: 'They do not want to kill you. They want to know you.' },
+            { id: 'bm6', text: 'Fight on. I will be waiting at the edge of the noise.' },
+        ]
+    };
+
+    let radioState = { shown: new Set(), lastTime: 0, typeTimer: null, current: null, queue: [] };
+
+    function queueRadio(speaker, text, priority = false) {
+        if (!radioChatter) return;
+        const item = { speaker, text, time: Date.now(), priority };
+        if (priority) radioQueue.unshift(item);
+        else radioQueue.push(item);
+    }
+
+    function showRadio(speaker, text) {
+        if (!radioChatter) return;
+        radioChatter.style.display = 'block';
+        radioChatter.classList.remove('fadeout');
+        radioSpeaker.textContent = speaker;
+        radioText.textContent = '';
+        radioText.classList.remove('done');
+        radioState.current = { speaker, text };
+        if (radioState.typeTimer) { clearInterval(radioState.typeTimer); radioState.typeTimer = null; }
+        let i = 0;
+        radioState.typeTimer = setInterval(() => {
+            if (i >= text.length) {
+                clearInterval(radioState.typeTimer);
+                radioState.typeTimer = null;
+                radioText.classList.add('done');
+                return;
+            }
+            radioText.textContent += text[i];
+            i++;
+        }, 20);
+        radioState.lastTime = Date.now();
+    }
+
+    function updateRadio() {
+        if (!radioChatter) return;
+        // Process queue
+        const now = Date.now();
+        if (radioQueue.length > 0 && !radioState.current) {
+            const item = radioQueue.shift();
+            showRadio(item.speaker, item.text);
+            return;
+        }
+        if (radioQueue.length > 0 && radioQueue[0].priority && now - radioState.lastTime > 600) {
+            const item = radioQueue.shift();
+            showRadio(item.speaker, item.text);
+            return;
+        }
+        // Auto-dismiss after cooldown
+        if (radioState.current && now - radioState.lastTime > RADIO_COOLDOWN) {
+            radioChatter.classList.add('fadeout');
+            setTimeout(() => {
+                if (radioChatter.classList.contains('fadeout')) {
+                    radioChatter.style.display = 'none';
+                    radioChatter.classList.remove('fadeout');
+                    radioState.current = null;
+                }
+            }, 520);
+        }
+    }
+
+    function maybeRadio(trigger, speaker = 'COMMAND') {
+        if (radioState.shown.has(trigger)) return;
+        radioState.shown.add(trigger);
+        const pool = speaker === 'BLOCKMASTER' ? RADIO_LINES.blockmaster : RADIO_LINES.command;
+        const line = pool.find(l => l.id === trigger);
+        if (line) queueRadio(speaker, line.text);
+    }
+
+    function triggerLevelForeshadow() {
+        const bm = RADIO_LINES.blockmaster[(state.level - 1) % RADIO_LINES.blockmaster.length];
+        if (bm) queueRadio('???', bm.text, true);
     }
 
     function renderDamageNumbers() {
@@ -2060,13 +2211,24 @@ function spawnExplosion(x, y) {
             state.kills++;
             state.streak++;
             state.streakFrames = 90;
-            hitStop = 2;
+            // Hit-stop / slow-mo scales with streak and enemy threat
+            const threat = e.behavior === 'tank' ? 2 : e.maxHp >= 4 ? 1.2 : 1;
+            hitStop = Math.min(8, Math.floor(2 + state.streak * 0.35 * threat));
+            if (state.streak >= 3) {
+                timeScale = 0.55;
+            } else {
+                timeScale = Math.max(0.75, 1 - state.streak * 0.05);
+            }
             const multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
             addScore(Math.round(e.maxHp * 100 * multiplier));
             state.credits += 8 + (e.maxHp - 3) * 5; // 8 / 13 / 23+ per kill
             playEnemyDeathSound(e);
             spawnExplosion(e.x, e.y);
             spawnDamageNumber(e.x, e.y, Math.round(damage), true);
+            if (state.kills === 1) maybeRadio('firstKill');
+            if (state.streak === 3) maybeRadio('streak3');
+            if (state.streak === 5) maybeRadio('streak5');
+            if (state.streak === 8) maybeRadio('streak8');
             return false;
         }
         playBulletHitSound(e.x, e.y);
@@ -2129,7 +2291,12 @@ function spawnExplosion(x, y) {
         if (now - state.lastFired < state.fireCooldown) return;
         state.lastFired = now;
         state.heat = Math.min(100, state.heat + 7);
-        if (state.heat >= 100) { state.jammed = true; state.jamFrames = state.jamDuration; state.jamWindowAngle = Math.PI; }
+        if (state.heat >= 100) {
+            state.jammed = true;
+            state.jamFrames = state.jamDuration;
+            state.jamWindowAngle = Math.PI;
+            maybeRadio('overheat');
+        }
 
         const tx = cursorPosX, ty = cursorPosY;
 
@@ -2221,9 +2388,16 @@ function spawnExplosion(x, y) {
         state.health = Math.max(0, state.health - (5 + bonus));
         healthBar.style.width = `${state.health}%`;
         damageFlash = 12;
+        chromaticSplit = 6;
+        shakeCanvas(5);
+        if (state.health <= 30) maybeRadio('lowHealth');
         // Splash: all deployed turrets take 3 damage
-        miniTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
-        flameTurrets.forEach(t => { t.hp = Math.max(0, t.hp - 3); });
+        let turretDied = false;
+        [...miniTurrets, ...flameTurrets].forEach(t => {
+            if (t.hp > 0 && t.hp - 3 <= 0) turretDied = true;
+            t.hp = Math.max(0, t.hp - 3);
+        });
+        if (turretDied) maybeRadio('firstDeath');
     }
 
     // --- Story / Cutscenes ---
@@ -2434,12 +2608,16 @@ function spawnExplosion(x, y) {
         state.levelKills = 0;
         levelDisplay.textContent = state.level;
         updateDroneIntensity();
-        if (isStoryLevel(state.level)) {
-            const beat = getStoryBeat(state.level);
-            startCutscene(beat);
-        } else {
-            showLevelUpScreen();
-        }
+        maybeRadio('levelUp');
+        if (state.level > 1 && state.level % 3 === 0) triggerLevelForeshadow();
+        startExtraction(() => {
+            if (isStoryLevel(state.level)) {
+                const beat = getStoryBeat(state.level);
+                startCutscene(beat);
+            } else {
+                showLevelUpScreen();
+            }
+        });
     }
 
     function showLevelUpScreen() {
@@ -2606,6 +2784,7 @@ function spawnExplosion(x, y) {
                     wobbleAmp: 3 + Math.random() * 3,
                     lerpSpeed: 0.055 + Math.random() * 0.04,
                 });
+                maybeRadio('firstTurret');
             }
         ));
 
@@ -2687,6 +2866,13 @@ function spawnExplosion(x, y) {
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
             damageFlash--;
+        }
+
+        // Chromatic aberration on heavy impacts
+        if (chromaticSplit > 0) {
+            applyChromaticSplit();
+            chromaticSplit *= 0.88;
+            if (chromaticSplit < 0.3) chromaticSplit = 0;
         }
 
         renderTurretArea();
@@ -2837,6 +3023,17 @@ function spawnExplosion(x, y) {
             streakDisplay.classList.remove('visible');
         }
 
+        // Narrative radio chatter ticker
+        updateRadio();
+
+        // Mid-wave progress chatter
+        if (state.levelKills > 0) {
+            const def = getLevelDef();
+            if (state.levelKills >= def.killsToNext * 0.5 && state.levelKills < def.killsToNext * 0.6) {
+                maybeRadio('halfway');
+            }
+        }
+
         if (state.health <= 0 && state.lives > 0) {
             state.lives--;
             livesText.textContent = state.lives;
@@ -2849,7 +3046,8 @@ function spawnExplosion(x, y) {
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
             ctx.restore();
         } else if (state.health <= 0 && state.lives === 0) {
-            gameLose();
+            startDeathSequence();
+            return;
         }
     }
 
@@ -2971,10 +3169,151 @@ function spawnExplosion(x, y) {
         if (state.deploying) rafId = requestAnimationFrame(deployFrame);
     }
 
+    // --- Cinematic overlays ---
+    function showTitleCard(onDone) {
+        if (!titleCard) { if (onDone) onDone(); return; }
+        titleCard.style.display = 'flex';
+        titleCard.classList.remove('fadeout');
+        titleCardLabel.textContent = state.level === 1 ? 'WAVE INCOMING' : 'HOLD THE LINE';
+        titleCardLevel.textContent = `LEVEL ${state.level}`;
+        titleCardSub.textContent = state.level === 1 ? 'HOSTILES DETECTED' : (LEVEL_DESCS[state.level - 1] || 'REINFORCEMENTS INCOMING');
+        playUiSound('levelup');
+        setTimeout(() => {
+            titleCard.classList.add('fadeout');
+            setTimeout(() => {
+                titleCard.style.display = 'none';
+                titleCard.classList.remove('fadeout');
+                if (onDone) onDone();
+            }, 420);
+        }, TITLE_CARD_DURATION);
+    }
+
+    let extractionCallback = null;
+    let extractionTimer = null;
+    function startExtraction(onDone) {
+        if (!extractionOverlay) { if (onDone) onDone(); return; }
+        extractionCallback = onDone;
+        extractionOverlay.style.display = 'flex';
+        extractionOverlay.classList.remove('fadeout');
+        extractionLabel.textContent = 'HOLDING PATTERN';
+        extractionSub.textContent = 'Extraction in progress...';
+        playUiSound('advance');
+        if (extractionTimer) clearTimeout(extractionTimer);
+        extractionTimer = setTimeout(() => {
+            extractionLabel.textContent = 'EXTRACTION COMPLETE';
+            extractionSub.textContent = 'Preparing upgrade bay...';
+            extractionOverlay.classList.add('fadeout');
+            setTimeout(() => {
+                extractionOverlay.style.display = 'none';
+                extractionOverlay.classList.remove('fadeout');
+                if (extractionCallback) extractionCallback();
+            }, 420);
+        }, EXTRACTION_DURATION);
+    }
+
+    // --- Cinematic death sequence ---
+    let deathAnim = { active: false, frames: 0 };
+    function startDeathSequence() {
+        if (deathAnim.active) return;
+        clearAllIntervals();
+        stopDrone();
+        deathAnim.active = true;
+        deathAnim.frames = 0;
+        rafId = requestAnimationFrame(deathFrame);
+    }
+
+    function deathLoop() {
+        deathAnim.frames++;
+        const p = Math.min(1, deathAnim.frames / 90);
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+        // Slow-mo background
+        const camX = centerX - playerX, camY = centerY - playerY;
+        renderStars();
+        ctx.save();
+        ctx.translate(camX, camY);
+        renderGrid();
+        renderEnemies();
+        renderDamageNumbers();
+        renderGatlingBullets();
+        renderMiniTurrets();
+        renderFlameTurrets();
+        renderShellCasings();
+        renderEnemyBullets();
+        renderWaveRings();
+        renderParticles();
+        ctx.restore();
+
+        renderTurretArea();
+        playerTurret.render();
+        drawPlayerBarrel();
+
+        // CRT glitch scanlines
+        ctx.save();
+        ctx.fillStyle = `rgba(0,0,0,${0.15 + Math.random() * 0.15})`;
+        for (let y = 0; y < canvasHeight; y += 4) {
+            if (Math.random() < 0.3) ctx.fillRect(0, y, canvasWidth, 2);
+        }
+        ctx.restore();
+
+        // Red vignette fade
+        const vig = ctx.createRadialGradient(centerX, centerY, Math.min(canvasWidth, canvasHeight) * 0.2,
+                                             centerX, centerY, Math.max(canvasWidth, canvasHeight) * 0.85);
+        vig.addColorStop(0, 'rgba(255,0,0,0)');
+        vig.addColorStop(1, `rgba(120,0,0,${p * 0.85})`);
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // Chromatic split intensifies
+        if (p > 0.4) {
+            chromaticSplit = 8 + (p - 0.4) * 20;
+            applyChromaticSplit();
+        }
+
+        if (deathAnim.frames >= 90) {
+            deathAnim.active = false;
+            deathAnim.frames = 0;
+            gameLose();
+        }
+    }
+
+    function deathFrame(timestamp) {
+        if (!deathAnim.active) return;
+        if (!lastTime) lastTime = timestamp;
+        const dt = Math.min(timestamp - lastTime, 100);
+        lastTime = timestamp;
+        logicAcc += dt;
+        let logicBudget = 5;
+        while (logicAcc >= 30 && logicBudget-- > 0) {
+            deathLoop();
+            logicAcc -= 30;
+        }
+        if (logicBudget < 0) logicAcc = 0;
+        if (deathAnim.active) rafId = requestAnimationFrame(deathFrame);
+    }
+
+    function applyChromaticSplit() {
+        if (chromaticSplit <= 0) return;
+        const s = chromaticSplit;
+        // Cheap chromatic aberration: draw red and cyan channels offset horizontally
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = 0.5;
+        ctx.filter = 'none';
+        // We can't easily re-render everything, so we draw a blurred red/cyan overlay
+        // using the existing canvas content. Simpler: just tint the whole screen red/cyan edges.
+        const grad = ctx.createLinearGradient(0, 0, canvasWidth, 0);
+        grad.addColorStop(0, `rgba(255,0,0,${Math.min(0.35, s * 0.03)})`);
+        grad.addColorStop(0.5, 'rgba(255,0,0,0)');
+        grad.addColorStop(1, `rgba(0,255,255,${Math.min(0.35, s * 0.03)})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        ctx.restore();
+    }
+
     // --- Reset ---
     function initStars() {
         stars = [];
-        const isLight = document.body.getAttribute('data-theme') === 'light';
         for (let i = 0; i < STAR_COUNT; i++) {
             const z = 0.25 + Math.random() * 0.75;
             stars.push({
@@ -2984,8 +3323,25 @@ function spawnExplosion(x, y) {
                 size: 0.6 + Math.random() * 1.4,
                 alpha: 0.35 + Math.random() * 0.65,
                 twinkle: Math.random() * Math.PI * 2,
-                twinkleSpeed: 0.03 + Math.random() * 0.08,
-                color: isLight ? '#1e2030' : '#ffffff'
+                twinkleSpeed: 0.03 + Math.random() * 0.08
+            });
+        }
+    }
+
+    function initNebula() {
+        nebulaClouds = [];
+        const palette = document.body.getAttribute('data-theme') === 'light'
+            ? ['rgba(60,80,120,0.08)', 'rgba(80,120,160,0.06)', 'rgba(100,90,140,0.05)', 'rgba(50,70,100,0.07)']
+            : ['rgba(40,60,120,0.14)', 'rgba(60,40,100,0.11)', 'rgba(20,80,120,0.12)', 'rgba(80,30,90,0.09)'];
+        for (let i = 0; i < NEBULA_COUNT; i++) {
+            nebulaClouds.push({
+                x: (Math.random() - 0.5) * NEBULA_FIELD,
+                y: (Math.random() - 0.5) * NEBULA_FIELD,
+                z: 0.08 + Math.random() * 0.12,
+                radius: 350 + Math.random() * 500,
+                color: palette[i % palette.length],
+                drift: 0.02 + Math.random() * 0.04,
+                driftAngle: Math.random() * Math.PI * 2
             });
         }
     }
@@ -3028,6 +3384,11 @@ function spawnExplosion(x, y) {
         miniTurrets = []; flameTurrets = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
         damageNumbers = [];
         initStars();
+        initNebula();
+        radioState.shown.clear();
+        radioState.current = null;
+        radioQueue.length = 0;
+        if (radioChatter) radioChatter.style.display = 'none';
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
@@ -3062,9 +3423,13 @@ function spawnExplosion(x, y) {
         const dt = Math.min(timestamp - lastTime, 100); // clamp tab-switch gaps
         lastTime = timestamp;
 
-        moveAcc  += dt;
-        logicAcc += dt;
-        spawnAcc += dt;
+        const scaledDt = dt * timeScale;
+        // Decay timeScale back to normal gradually (slow-mo recovery)
+        if (timeScale < 1) timeScale = Math.min(1, timeScale + 0.04);
+
+        moveAcc  += scaledDt;
+        logicAcc += scaledDt;
+        spawnAcc += scaledDt;
 
         // Hit-stop: freeze movement and spawns briefly on kill, keep rendering
         const frozen = hitStop > 0;
@@ -3102,8 +3467,11 @@ function spawnExplosion(x, y) {
         moveAcc = 0; logicAcc = 0; spawnAcc = 0; lastTime = 0;
         gameRunning = true;
         paused      = false;
+        timeScale = 1;
         startDrone();
-        rafId = requestAnimationFrame(gameFrame);
+        showTitleCard(() => {
+            rafId = requestAnimationFrame(gameFrame);
+        });
     }
 
     function togglePause() {
