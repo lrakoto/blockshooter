@@ -18,11 +18,11 @@ Hosted on GitHub Pages: https://lrakoto.github.io/blockshooter/
 
 ## File Structure
 ```
-index.html   — Game layout, menus (start/win/lose), canvas, HUD
+index.html   — Game layout, menus (start/win/lose), canvas, HUD, intro + deploy overlays
 style.css    — All styling (responsive, uses vw/vh/%)
 script.js    — All game logic (single DOMContentLoaded listener)
 images/      — turret.webp, wireframe.png
-sounds/      — lasers.m4a (laser sound, currently commented out)
+sounds/      — lasers.m4a (legacy; unused — all audio is Web Audio API synth)
 README.md    — Dev notes and code walkthrough
 ```
 
@@ -33,14 +33,15 @@ Everything lives inside one `DOMContentLoaded` listener. Key pieces:
 - **Enemy movement**: `moveEnemies()` runs every 20ms. Uses `Math.atan2` to head toward `(playerX, playerY)` (camera-follows-player world). Speed via `state.perFrameDistance`, capped at `ENEMY_MAX_SPEED = 0.76`.
 - **Player**: `Player` class instance (`playerTurret`) drawn at screen center `(centerX, centerY)`. World scrolls around player via `playerX`/`playerY`. WASD or left touch joystick to move.
 - **Shooting**: `mousedown`/touch fires `fireAction()` — ray-style bullets in `gatlingBullets[]` with `progress` interpolation. Hit detection via `rayHitsEnemy()` (point-to-segment distance). Tank enemies shoot back via `enemyBullets[]`.
-- **Game loop**: three `setInterval`s — `gameLoop` (30ms render+logic), `spawnEnemy` (level-scaled interval), `moveEnemies` (20ms).
+- **Background**: parallax `stars[]` drawn behind a faint dynamic grid (`renderGrid()`); the old noisy `pattern-02.png` tile was removed.
+- **Game loop**: single `requestAnimationFrame` — `gameFrame()` drives fixed-timestep accumulators for move (20ms), logic/render (30ms), and spawn (level-scaled). A separate `deployFrame()` plays a short drop-in cinematic before the first level.
 - **Difficulty scaling**: `LEVELS[]` table (8 entries) — `killsToNext`, `spawnInterval`, `toughChance`, `eliteChance`. Beyond level 8, `getLevelDef()` extrapolates: HP scales up, spawn interval shrinks, speed capped.
-- **Story / Cutscenes**: every 5 levels (5, 10, 15, 20, 25, 30), a comms-feed interstitial with typewriter text plays before the shop. `STORY_BEATS[]` array defines panels with speaker + text. Click SKIP to fast-forward typing, click NEXT/CONTINUE to advance panels. After the last panel, bonus credits are awarded and the shop opens. `isStoryLevel()` checks if a level triggers a cutscene.
+- **Story / Cutscenes**: an opening prologue (`INTRO_PANELS[]`) plays before the main menu. Every 5 levels (5, 10, 15, 20, 25, 30), a comms-feed interstitial with typewriter text plays before the shop. `STORY_BEATS[]` array defines panels with speaker + text. Click SKIP to fast-forward typing, click NEXT/CONTINUE to advance panels. After the last panel, bonus credits are awarded and the shop opens. `isStoryLevel()` checks if a level triggers a cutscene.
 - **Lose condition**: `health <= 0 && lives === 0`. Player starts with 3 lives; each death resets health to 100 and grants 120 frames invincibility.
 - **Upgrades shop**: between levels, `populateUpgrades()` offers stat upgrades (UPGRADES[]), turret purchases (Gatling/Shotgun), and turret upgrades (TURRET_UPGRADES[]). Credits earned per kill + level completion bonus.
 - **Wave blast**: `triggerWave()` (E key) — radial push + non-lethal HP damage to enemies in range, 12s cooldown.
 - **Heat mechanic**: firing builds `state.heat`; at 100 the gun jams for `jamDuration` frames. `ventOverheat()` (R key) clears the jam if pressed during the VENT_ZONE window (0.38-0.62 of jam progress).
-- **Audio**: Web Audio API synth — `playExplosionSound`, `playGatlingSound`, `playBulletHitSound`, `playShotgunSound`, `playRailgunSound`, `playBoundaryHitSound`, `playWaveReadySound`. `audioCtx` lazily created on first user gesture.
+- **Audio**: Web Audio API synth — `playExplosionSound`, `playGatlingSound`, `playBulletHitSound`, `playShotgunSound`, `playRailgunSound`, `playBoundaryHitSound`, `playWaveReadySound`, `playWaveBlastSound`, `playEnemyHurtSound`, `playEnemyDeathSound`, `playUiSound`. `audioCtx` lazily created on first user gesture. Spatial stereo panning based on world position, per-weapon pitch variation, dynamic ambient drone, and a mute toggle with `localStorage` persistence.
 - **Mobile**: dual-zone touch — left half = movement joystick, right half = trackpad-style aim. Portrait shows a rotate prompt.
 - **Theme**: dark (default) / light toggle, persisted in localStorage. High score persisted in localStorage.
 
@@ -50,6 +51,7 @@ Everything lives inside one `DOMContentLoaded` listener. Key pieces:
 - Win screen removed; replaced by story cutscenes every 5 levels with bonus credits.
 - Start menu copy lists all upgrade types and mentions ESC to pause and WASD movement.
 - Pause available via ESC (desktop) or tapping the pause overlay (mobile).
+- Mute toggle and theme toggle both persist in `localStorage`.
 
 ## Deployment
 ```bash

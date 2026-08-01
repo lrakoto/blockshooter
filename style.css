@@ -84,11 +84,12 @@ h3{
 canvas{
     display: block;
     touch-action: none;
-    background: url(./images/pattern-02.png);
-    background-repeat: repeat;
-    background-size: 100px;
-    background-position: center center;
+    background: #05070a;
     z-index:1;
+}
+
+[data-theme="light"] canvas {
+    background: #d0d4de;
 }
 
 canvas, aside, .bord{
@@ -388,6 +389,25 @@ button{
 }
 #theme-toggle:hover { color: #fff; }
 
+/* Mute toggle button */
+#mute-toggle {
+    display: block;
+    position: fixed;
+    bottom: 60px;
+    right: 105px;
+    padding: 6px 10px;
+    font-size: 0.5em;
+    letter-spacing: 2px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    z-index: 10;
+}
+#mute-toggle:hover { color: #fff; }
+#mute-toggle.muted { color: #ff5555; border-color: rgba(255,85,85,0.35); }
+
 /* ─── Light theme ─────────────────────────────────────────────────────────── */
 [data-theme="light"] body {
     background: #d8dce6;
@@ -462,9 +482,16 @@ button{
     color: rgba(0,0,0,0.6);
 }
 [data-theme="light"] #theme-toggle:hover { color: #1e2030; }
+[data-theme="light"] #mute-toggle {
+    background: rgba(0,0,0,0.08);
+    border-color: rgba(0,0,0,0.15);
+    color: rgba(0,0,0,0.6);
+}
+[data-theme="light"] #mute-toggle:hover { color: #1e2030; }
+[data-theme="light"] #mute-toggle.muted { color: #c43d3d; border-color: rgba(196,61,61,0.35); }
 
 /* ─── Cutscene / Story interstitial ───────────────────────────────────────── */
-#cutscene {
+#cutscene, #intro-cutscene {
     display: none;
     position: fixed;
     inset: 0;
@@ -554,13 +581,88 @@ button{
 #cutscene-continue:hover {
     background: rgba(27, 255, 193, 0.18);
 }
-[data-theme="light"] #cutscene { background: rgba(20, 30, 25, 0.92); }
+[data-theme="light"] #cutscene, [data-theme="light"] #intro-cutscene { background: rgba(20, 30, 25, 0.92); }
 [data-theme="light"] .cutscene-wrap { border-color: rgba(27, 180, 140, 0.35); }
-[data-theme="light"] #cutscene-continue {
+[data-theme="light"] #cutscene-continue, [data-theme="light"] #intro-continue {
     background: rgba(27, 180, 140, 0.1);
     border-color: rgba(27, 180, 140, 0.4);
     color: #0a6e50;
 }
+
+/* Intro cutscene specific */
+#intro-cutscene { display: flex; }
+#intro-cutscene.fadeout {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease-out;
+}
+#intro-text::after {
+    content: '_';
+    color: #1bffc1;
+    animation: cutscene-cursor 0.6s step-end infinite;
+}
+#intro-text.done::after { content: ''; }
+
+/* Deploy drop-in overlay */
+#deploy-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+}
+#deploy-overlay.fadeout {
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
+}
+.deploy-wrap {
+    width: min(520px, 90vw);
+    border-top: 1px solid rgba(27, 255, 193, 0.25);
+    border-left: 1px solid rgba(27, 255, 193, 0.25);
+    border-right: 1px solid rgba(27, 255, 193, 0.25);
+    background: rgba(0, 15, 12, 0.82);
+    border-radius: 2px 2px 0 0;
+    padding: 14px 18px;
+    margin-bottom: 0;
+    box-shadow: 0 -10px 40px rgba(27, 255, 193, 0.06);
+}
+.deploy-header {
+    color: #1bffc1;
+    font-size: 0.55em;
+    font-weight: 700;
+    letter-spacing: 4px;
+    margin-bottom: 6px;
+}
+#deploy-speaker {
+    color: #1bffc1;
+    font-size: 0.7em;
+    font-weight: 700;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+}
+#deploy-text {
+    color: rgba(220, 240, 235, 0.9);
+    font-size: 0.8em;
+    line-height: 1.6;
+    letter-spacing: 0.5px;
+    min-height: 1.5em;
+}
+#deploy-text::after {
+    content: '_';
+    color: #1bffc1;
+    animation: cutscene-cursor 0.6s step-end infinite;
+}
+#deploy-text.done::after { content: ''; }
+[data-theme="light"] #deploy-overlay { background: rgba(20, 30, 25, 0.25); }
+[data-theme="light"] .deploy-wrap { background: rgba(230, 235, 242, 0.9); }
+[data-theme="light"] #deploy-speaker { color: #0a6e50; }
+[data-theme="light"] .deploy-header { color: #0a6e50; }
+[data-theme="light"] #deploy-text { color: #1e2030; }
 
 /* ─── Pause overlay ───────────────────────────────────────────────────────── */
 #pause-overlay {
@@ -667,4 +769,6 @@ button{
 
     /* Theme toggle */
     #theme-toggle { bottom: 10px; right: 10px; padding: 5px 8px; font-size: 0.45em; }
+    /* Mute toggle */
+    #mute-toggle { bottom: 10px; right: 78px; padding: 5px 8px; font-size: 0.45em; }
 }

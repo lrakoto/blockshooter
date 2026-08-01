@@ -10,6 +10,16 @@ window.addEventListener('DOMContentLoaded', function() {
     const cutsceneText    = document.querySelector('#cutscene-text');
     const cutsceneProgress= document.querySelector('#cutscene-progress');
     const cutsceneBtn     = document.querySelector('#cutscene-continue');
+    const introCutscene       = document.querySelector('#intro-cutscene');
+    const introLabel          = document.querySelector('#intro-label');
+    const introSpeaker        = document.querySelector('#intro-speaker');
+    const introText           = document.querySelector('#intro-text');
+    const introProgress       = document.querySelector('#intro-progress');
+    const introBtn            = document.querySelector('#intro-continue');
+    const deployOverlay       = document.querySelector('#deploy-overlay');
+    const deployLabel         = document.querySelector('#deploy-label');
+    const deploySpeaker       = document.querySelector('#deploy-speaker');
+    const deployText          = document.querySelector('#deploy-text');
     const loseMenu        = document.querySelector('#losemenu');
     const levelMenu      = document.querySelector('#levelmenu');
     const returnMenuLose = document.querySelector('#returntomenulose');
@@ -36,64 +46,144 @@ window.addEventListener('DOMContentLoaded', function() {
     const controlsOpen     = document.querySelector('#controls-open');
     const controlsToggle   = document.querySelector('#controls-toggle');
     const themeToggle      = document.querySelector('#theme-toggle');
+    const muteToggle       = document.querySelector('#mute-toggle');
     const pauseOverlay     = document.querySelector('#pause-overlay');
     const ctx              = gameCanvas.getContext('2d');
     const miniturretCountEl = document.querySelector('#miniturret-count');
 
     // --- Audio ---
     let audioCtx = null;
+    let soundEnabled = true;
+    let masterGain = null;
+    let droneNodes = null;
 
     function ensureAudioCtx() {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 1;
+            masterGain.connect(audioCtx.destination);
+        }
         if (audioCtx.state === 'suspended') audioCtx.resume();
     }
 
-    function playExplosionSound() {
+    function getMasterGain() {
+        ensureAudioCtx();
+        return masterGain;
+    }
+
+    function shouldPlaySound() {
+        return soundEnabled && audioCtx;
+    }
+
+    // Spatial panning: x,y in world space relative to player
+    function createPanner(x, y) {
+        ensureAudioCtx();
+        const panner = audioCtx.createStereoPanner();
+        const dx = x - playerX, dy = y - playerY;
+        const dist = Math.hypot(dx, dy) || 1;
+        // Normalize to -1..1 based on horizontal position, fall off with distance
+        const pan = Math.max(-1, Math.min(1, (dx / dist) * (1 - Math.min(1, dist / 900))));
+        panner.pan.value = pan;
+        return panner;
+    }
+
+    function connectToMaster(node, x, y) {
+        ensureAudioCtx();
+        if (x !== undefined && y !== undefined) {
+            const panner = createPanner(x, y);
+            node.connect(panner);
+            panner.connect(masterGain || audioCtx.destination);
+        } else {
+            node.connect(masterGain || audioCtx.destination);
+        }
+    }
+
+    function createNoiseBuffer(duration, sampleRate) {
+        const len = Math.floor(sampleRate * duration);
+        const buf = audioCtx.createBuffer(1, len, sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        return buf;
+    }
+
+    // Ambient drone that intensifies with level
+    function startDrone() {
+        if (!soundEnabled) return;
+        ensureAudioCtx();
+        if (!audioCtx) return;
+        if (droneNodes) stopDrone();
+        const ac = audioCtx, t = ac.currentTime;
+        const baseFreq = 55;
+        const osc1 = ac.createOscillator(), osc2 = ac.createOscillator(), osc3 = ac.createOscillator();
+        const gain1 = ac.createGain(), gain2 = ac.createGain(), gain3 = ac.createGain();
+        osc1.type = 'sine'; osc2.type = 'sine'; osc3.type = 'triangle';
+        osc1.frequency.value = baseFreq;
+        osc2.frequency.value = baseFreq * 1.5;
+        osc3.frequency.value = baseFreq * 2;
+        gain1.gain.value = 0; gain2.gain.value = 0; gain3.gain.value = 0;
+        osc1.connect(gain1); osc2.connect(gain2); osc3.connect(gain3);
+        gain1.connect(masterGain); gain2.connect(masterGain); gain3.connect(masterGain);
+        osc1.start(t); osc2.start(t); osc3.start(t);
+        droneNodes = { osc1, osc2, osc3, gain1, gain2, gain3 };
+        updateDroneIntensity();
+    }
+
+    function stopDrone() {
+        if (!droneNodes) return;
+        const t = audioCtx.currentTime;
+        try { droneNodes.osc1.stop(t); } catch(e){}
+        try { droneNodes.osc2.stop(t); } catch(e){}
+        try { droneNodes.osc3.stop(t); } catch(e){}
+        droneNodes = null;
+    }
+
+    function updateDroneIntensity() {
+        if (!droneNodes || !audioCtx) return;
+        const level = state.level || 1;
+        const tension = Math.min(1, (level - 1) / 20);
+        const t = audioCtx.currentTime;
+        const base = 0.018 + tension * 0.045;
+        droneNodes.gain1.gain.linearRampToValueAtTime(base, t + 0.5);
+        droneNodes.gain2.gain.linearRampToValueAtTime(base * 0.5, t + 0.5);
+        droneNodes.gain3.gain.linearRampToValueAtTime(base * 0.25 * tension, t + 0.5);
+    }
+
+    function playExplosionSound(x, y) {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        // Soft-clip waveshaper — adds harmonics to pure sines so they sound bigger
+        const panner = createPanner(x, y);
+        // Soft-clip waveshaper
         const clipCurve = new Float32Array(256);
         for (let i = 0; i < 256; i++) {
-            const x = (i * 2) / 255 - 1;
-            clipCurve[i] = (Math.PI + 300) * x / (Math.PI + 300 * Math.abs(x));
+            const v = (i * 2) / 255 - 1;
+            clipCurve[i] = (Math.PI + 300) * v / (Math.PI + 300 * Math.abs(v));
         }
-        // Hard-clip waveshaper for grit — softer at low freqs to avoid choppiness
         const gritCurve = new Float32Array(256);
         for (let i = 0; i < 256; i++) {
-            const x = (i * 2) / 255 - 1;
-            gritCurve[i] = Math.max(-0.55, Math.min(0.55, x * 2.2)) / 0.55;
+            const v = (i * 2) / 255 - 1;
+            gritCurve[i] = Math.max(-0.55, Math.min(0.55, v * 2.2)) / 0.55;
         }
-        // 0. Kick — sharp bass drum pop at the very start
-        const kick = ac.createOscillator();
-        const kickGain = ac.createGain();
-        kick.connect(kickGain); kickGain.connect(ac.destination);
+
+        const busGain = ac.createGain();
+        busGain.gain.value = 0.85;
+        busGain.connect(panner); panner.connect(masterGain);
+
+        // Kick
+        const kick = ac.createOscillator(), kickGain = ac.createGain();
+        kick.connect(kickGain); kickGain.connect(busGain);
         kick.type = 'sine';
         kick.frequency.setValueAtTime(80, t);
         kick.frequency.exponentialRampToValueAtTime(28, t + 0.06);
         kickGain.gain.setValueAtTime(1.2, t);
         kickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.135);
         kick.start(t); kick.stop(t + 0.135);
-        // 1. Noise burst — heavily muffled, distant thud (very low LP)
-        const crackLen = Math.floor(ac.sampleRate * 0.9);
-        const crackBuf = ac.createBuffer(1, crackLen, ac.sampleRate);
-        const cd = crackBuf.getChannelData(0);
-        for (let i = 0; i < crackLen; i++) cd[i] = Math.random() * 2 - 1;
-        const crack = ac.createBufferSource();
-        crack.buffer = crackBuf;
-        const crackLP = ac.createBiquadFilter();
-        crackLP.type = 'lowpass'; crackLP.frequency.value = 8;
-        const crackGain = ac.createGain();
-        crack.connect(crackLP); crackLP.connect(crackGain); crackGain.connect(ac.destination);
-        crackGain.gain.setValueAtTime(0.0, t);
-        crackGain.gain.linearRampToValueAtTime(0.32, t + 0.41);
-        crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
-        crack.start(t);
-        // 2. Pressure wave — deep sub sine, what makes it "feel" like a boom
-        const pressure = ac.createOscillator();
-        const pressureShaper = ac.createWaveShaper();
+
+        // Pressure wave
+        const pressure = ac.createOscillator(), pressureShaper = ac.createWaveShaper(), pressureGain = ac.createGain();
         pressureShaper.curve = clipCurve; pressureShaper.oversample = '4x';
-        const pressureGain = ac.createGain();
-        pressure.connect(pressureShaper); pressureShaper.connect(pressureGain); pressureGain.connect(ac.destination);
+        pressure.connect(pressureShaper); pressureShaper.connect(pressureGain); pressureGain.connect(busGain);
         pressure.type = 'sine';
         pressure.frequency.setValueAtTime(1.1, t);
         pressure.frequency.exponentialRampToValueAtTime(0.22, t + 1.2);
@@ -101,12 +191,11 @@ window.addEventListener('DOMContentLoaded', function() {
         pressureGain.gain.linearRampToValueAtTime(0.85, t + 0.375);
         pressureGain.gain.exponentialRampToValueAtTime(0.001, t + 1.35);
         pressure.start(t); pressure.stop(t + 1.35);
-        // 3. Main thump — slow swell, very low, long decay
-        const thump = ac.createOscillator();
-        const thumpShaper = ac.createWaveShaper();
+
+        // Main thump
+        const thump = ac.createOscillator(), thumpShaper = ac.createWaveShaper(), thumpGain = ac.createGain();
         thumpShaper.curve = clipCurve; thumpShaper.oversample = '4x';
-        const thumpGain = ac.createGain();
-        thump.connect(thumpShaper); thumpShaper.connect(thumpGain); thumpGain.connect(ac.destination);
+        thump.connect(thumpShaper); thumpShaper.connect(thumpGain); thumpGain.connect(busGain);
         thump.type = 'sine';
         thump.frequency.setValueAtTime(2.1, t);
         thump.frequency.exponentialRampToValueAtTime(0.35, t + 1.125);
@@ -114,74 +203,42 @@ window.addEventListener('DOMContentLoaded', function() {
         thumpGain.gain.linearRampToValueAtTime(0.7, t + 0.375);
         thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
         thump.start(t); thump.stop(t + 1.2);
-        // 4. Grit layer — hard-clipped bandpass noise, rough static texture
-        const gritLen = Math.floor(ac.sampleRate * 1.05);
-        const gritBuf = ac.createBuffer(1, gritLen, ac.sampleRate);
-        const gd = gritBuf.getChannelData(0);
-        for (let i = 0; i < gritLen; i++) gd[i] = Math.random() * 2 - 1;
-        const grit = ac.createBufferSource();
+
+        // Grit layer
+        const grit = ac.createBufferSource(), gritBuf = createNoiseBuffer(1.05, ac.sampleRate);
         grit.buffer = gritBuf;
-        const gritBP = ac.createBiquadFilter();
+        const gritBP = ac.createBiquadFilter(), gritShaper = ac.createWaveShaper(), gritGain = ac.createGain();
         gritBP.type = 'bandpass'; gritBP.Q.value = 0.4;
         gritBP.frequency.setValueAtTime(8.5, t);
         gritBP.frequency.exponentialRampToValueAtTime(2.1, t + 0.975);
-        const gritShaper = ac.createWaveShaper();
         gritShaper.curve = gritCurve; gritShaper.oversample = '2x';
-        const gritGain = ac.createGain();
-        grit.connect(gritBP); gritBP.connect(gritShaper); gritShaper.connect(gritGain); gritGain.connect(ac.destination);
+        grit.connect(gritBP); gritBP.connect(gritShaper); gritShaper.connect(gritGain); gritGain.connect(busGain);
         gritGain.gain.setValueAtTime(0.0, t);
         gritGain.gain.linearRampToValueAtTime(1.4, t + 0.375);
         gritGain.gain.exponentialRampToValueAtTime(0.001, t + 1.05);
         grit.start(t);
-        // 5. Body whomp — wide bandpass noise sweep, adds the explosion's body
-        const whompLen = Math.floor(ac.sampleRate * 1.2);
-        const whompBuf = ac.createBuffer(1, whompLen, ac.sampleRate);
-        const wd = whompBuf.getChannelData(0);
-        for (let i = 0; i < whompLen; i++) wd[i] = Math.random() * 2 - 1;
-        const whomp = ac.createBufferSource();
-        whomp.buffer = whompBuf;
-        const whompBP = ac.createBiquadFilter();
-        whompBP.type = 'bandpass'; whompBP.Q.value = 0.6;
-        whompBP.frequency.setValueAtTime(7, t);
-        whompBP.frequency.exponentialRampToValueAtTime(1.4, t + 1.125);
-        const whompGain = ac.createGain();
-        whomp.connect(whompBP); whompBP.connect(whompGain); whompGain.connect(ac.destination);
-        whompGain.gain.setValueAtTime(0.0, t);
-        whompGain.gain.linearRampToValueAtTime(0.6, t + 0.375);
-        whompGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
-        whomp.start(t);
-        // 6. Deep rumble tail — very low lowpass
-        const tailDur = 0.075;
-        const tailLen = Math.floor(ac.sampleRate * tailDur);
-        const tailBuf = ac.createBuffer(1, tailLen, ac.sampleRate);
-        const td = tailBuf.getChannelData(0);
-        for (let i = 0; i < tailLen; i++) td[i] = Math.random() * 2 - 1;
-        const tail = ac.createBufferSource();
-        tail.buffer = tailBuf;
-        const tailLP = ac.createBiquadFilter();
-        tailLP.type = 'lowpass'; tailLP.frequency.value = 3;
-        const tailGain = ac.createGain();
-        tail.connect(tailLP); tailLP.connect(tailGain); tailGain.connect(ac.destination);
-        tailGain.gain.setValueAtTime(0.0, t);
-        tailGain.gain.linearRampToValueAtTime(0.18, t + 0.375);
-        tailGain.gain.exponentialRampToValueAtTime(0.001, t + 0.068);
-        tail.start(t); tail.stop(t + tailDur);
     }
 
-    function playGatlingSound() {
+    function playGatlingSound(x, y, isTurret = false) {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        // Low mechanical thump — body of the round firing
-        const thump = ac.createOscillator();
-        const tGain = ac.createGain();
-        thump.connect(tGain); tGain.connect(ac.destination);
+        const panner = createPanner(x || playerX, y || playerY);
+        const bus = ac.createGain();
+        bus.gain.value = isTurret ? 0.55 : 0.75;
+        bus.connect(panner); panner.connect(masterGain);
+
+        // Pitch/variation based on heat/level feel
+        const pitchVar = 1 + (Math.random() - 0.5) * 0.06;
+        const thump = ac.createOscillator(), tGain = ac.createGain();
+        thump.connect(tGain); tGain.connect(bus);
         thump.type = 'sine';
-        thump.frequency.setValueAtTime(90, t);
-        thump.frequency.exponentialRampToValueAtTime(28, t + 0.042);
-        tGain.gain.setValueAtTime(0.55, t);
+        thump.frequency.setValueAtTime(90 * pitchVar, t);
+        thump.frequency.exponentialRampToValueAtTime(28 * pitchVar, t + 0.042);
+        tGain.gain.setValueAtTime(isTurret ? 0.35 : 0.55, t);
         tGain.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
         thump.start(t); thump.stop(t + 0.045);
-        // Sharp crack — highpass + bandpass noise burst
+
         const len = Math.floor(ac.sampleRate * 0.028);
         const buf = ac.createBuffer(1, len, ac.sampleRate);
         const d = buf.getChannelData(0);
@@ -191,18 +248,19 @@ window.addEventListener('DOMContentLoaded', function() {
         const hp = ac.createBiquadFilter();
         hp.type = 'highpass'; hp.frequency.value = 1800;
         const bp = ac.createBiquadFilter();
-        bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 1.2;
+        bp.type = 'bandpass'; bp.frequency.value = 3200 * pitchVar; bp.Q.value = 1.2;
         const gain = ac.createGain();
-        src.connect(hp); hp.connect(bp); bp.connect(gain); gain.connect(ac.destination);
-        gain.gain.setValueAtTime(0.32, t);
+        src.connect(hp); hp.connect(bp); bp.connect(gain); gain.connect(bus);
+        gain.gain.setValueAtTime(isTurret ? 0.22 : 0.32, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.028);
         src.start(t);
     }
 
-    function playBulletHitSound() {
+    function playBulletHitSound(x, y) {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        // Descending bandpass noise sweep — the "thok" of impact
+        const panner = createPanner(x, y);
         const len = Math.floor(ac.sampleRate * 0.055);
         const buf = ac.createBuffer(1, len, ac.sampleRate);
         const d = buf.getChannelData(0);
@@ -211,17 +269,16 @@ window.addEventListener('DOMContentLoaded', function() {
         src.buffer = buf;
         const bp = ac.createBiquadFilter();
         bp.type = 'bandpass'; bp.Q.value = 2.0;
-        bp.frequency.setValueAtTime(1400, t);
+        bp.frequency.setValueAtTime(1400 + (Math.random() - 0.5) * 300, t);
         bp.frequency.exponentialRampToValueAtTime(180, t + 0.045);
         const gain = ac.createGain();
-        src.connect(bp); bp.connect(gain); gain.connect(ac.destination);
+        src.connect(bp); bp.connect(gain); gain.connect(panner); panner.connect(masterGain);
         gain.gain.setValueAtTime(0.5, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
         src.start(t);
-        // Low sine body — adds punch/weight
-        const osc = ac.createOscillator();
-        const oGain = ac.createGain();
-        osc.connect(oGain); oGain.connect(ac.destination);
+
+        const osc = ac.createOscillator(), oGain = ac.createGain();
+        osc.connect(oGain); oGain.connect(panner);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(200, t);
         osc.frequency.exponentialRampToValueAtTime(55, t + 0.05);
@@ -230,18 +287,24 @@ window.addEventListener('DOMContentLoaded', function() {
         osc.start(t); osc.stop(t + 0.055);
     }
 
-    function playShotgunSound() {
+    function playShotgunSound(x, y) {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        const thump = ac.createOscillator();
-        const tGain = ac.createGain();
-        thump.connect(tGain); tGain.connect(ac.destination);
+        const panner = createPanner(x, y);
+        const bus = ac.createGain();
+        bus.gain.value = 0.85;
+        bus.connect(panner); panner.connect(masterGain);
+
+        const thump = ac.createOscillator(), tGain = ac.createGain();
+        thump.connect(tGain); tGain.connect(bus);
         thump.type = 'sine';
         thump.frequency.setValueAtTime(110, t);
         thump.frequency.exponentialRampToValueAtTime(28, t + 0.13);
         tGain.gain.setValueAtTime(0.75, t);
         tGain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
         thump.start(t); thump.stop(t + 0.16);
+
         const len = Math.floor(ac.sampleRate * 0.13);
         const buf = ac.createBuffer(1, len, ac.sampleRate);
         const d = buf.getChannelData(0);
@@ -251,28 +314,30 @@ window.addEventListener('DOMContentLoaded', function() {
         const lp = ac.createBiquadFilter();
         lp.type = 'lowpass'; lp.frequency.value = 1400;
         const gain = ac.createGain();
-        src.connect(lp); lp.connect(gain); gain.connect(ac.destination);
+        src.connect(lp); lp.connect(gain); gain.connect(bus);
         gain.gain.setValueAtTime(0.8, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
         src.start(t);
     }
 
-    function playRailgunSound() {
+    function playRailgunSound(x, y) {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        const osc = ac.createOscillator();
-        const gain = ac.createGain();
-        osc.connect(gain); gain.connect(ac.destination);
+        const panner = createPanner(x, y);
+        const bus = ac.createGain();
+        bus.gain.value = 0.7;
+        bus.connect(panner); panner.connect(masterGain);
+        const osc = ac.createOscillator(), gain = ac.createGain();
+        osc.connect(gain); gain.connect(bus);
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(2800, t);
         osc.frequency.exponentialRampToValueAtTime(300, t + 0.07);
         gain.gain.setValueAtTime(0.5, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
         osc.start(t); osc.stop(t + 0.09);
-        // Metallic ring decay
-        const ring = ac.createOscillator();
-        const rGain = ac.createGain();
-        ring.connect(rGain); rGain.connect(ac.destination);
+        const ring = ac.createOscillator(), rGain = ac.createGain();
+        ring.connect(rGain); rGain.connect(bus);
         ring.type = 'sine';
         ring.frequency.setValueAtTime(3400, t);
         ring.frequency.linearRampToValueAtTime(2900, t + 0.35);
@@ -282,45 +347,165 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     function playBoundaryHitSound() {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
-        // Low impact thump
-        const osc  = ac.createOscillator();
-        const gain = ac.createGain();
-        osc.connect(gain); gain.connect(ac.destination);
+        const bus = ac.createGain();
+        bus.gain.value = 0.9;
+        bus.connect(masterGain);
+        const osc = ac.createOscillator(), gain = ac.createGain();
+        osc.connect(gain); gain.connect(bus);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(130, t);
         osc.frequency.exponentialRampToValueAtTime(38, t + 0.18);
         gain.gain.setValueAtTime(0.65, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
         osc.start(t); osc.stop(t + 0.22);
-        // Sharp brittle crack
         const len = Math.floor(ac.sampleRate * 0.055);
         const buf = ac.createBuffer(1, len, ac.sampleRate);
-        const d   = buf.getChannelData(0);
+        const d = buf.getChannelData(0);
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-        const src   = ac.createBufferSource();
-        src.buffer  = buf;
-        const hp    = ac.createBiquadFilter();
-        hp.type     = 'highpass'; hp.frequency.value = 1200;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const hp = ac.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 1200;
         const nGain = ac.createGain();
-        src.connect(hp); hp.connect(nGain); nGain.connect(ac.destination);
+        src.connect(hp); hp.connect(nGain); nGain.connect(bus);
         nGain.gain.setValueAtTime(0.35, t);
         nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
         src.start(t);
     }
 
     function playWaveReadySound() {
+        if (!shouldPlaySound()) return;
         ensureAudioCtx();
         const ac = audioCtx, t = ac.currentTime;
         const osc = ac.createOscillator(), gain = ac.createGain();
-        osc.connect(gain); gain.connect(ac.destination);
+        osc.connect(gain); gain.connect(masterGain);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(1400, t);
         osc.frequency.exponentialRampToValueAtTime(2200, t + 0.07);
         gain.gain.setValueAtTime(0.12, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
         osc.start(t); osc.stop(t + 0.22);
+    }
+
+    function playWaveBlastSound() {
+        if (!shouldPlaySound()) return;
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const bus = ac.createGain();
+        bus.gain.value = 0.85;
+        bus.connect(masterGain);
+        // Reverse-sweep whoosh
+        const osc = ac.createOscillator(), gain = ac.createGain();
+        osc.connect(gain); gain.connect(bus);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(350, t);
+        osc.frequency.exponentialRampToValueAtTime(60, t + 0.55);
+        gain.gain.setValueAtTime(0.0, t);
+        gain.gain.linearRampToValueAtTime(0.8, t + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        osc.start(t); osc.stop(t + 0.55);
+        // Noise sweep
+        const src = ac.createBufferSource();
+        src.buffer = createNoiseBuffer(0.55, ac.sampleRate);
+        const bp = ac.createBiquadFilter(), nGain = ac.createGain();
+        bp.type = 'bandpass'; bp.Q.value = 0.6;
+        bp.frequency.setValueAtTime(900, t);
+        bp.frequency.exponentialRampToValueAtTime(120, t + 0.5);
+        src.connect(bp); bp.connect(nGain); nGain.connect(bus);
+        nGain.gain.setValueAtTime(0.0, t);
+        nGain.gain.linearRampToValueAtTime(0.55, t + 0.08);
+        nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        src.start(t);
+    }
+
+    function playEnemyDeathSound(e) {
+        if (!shouldPlaySound()) return;
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const panner = createPanner(e.x, e.y);
+        const bus = ac.createGain();
+        bus.gain.value = 0.6;
+        bus.connect(panner); panner.connect(masterGain);
+        const isTank = e.behavior === 'tank';
+        const baseFreq = isTank ? 90 : (e.maxHp >= 4 ? 220 : e.maxHp >= 3 ? 320 : 420);
+        const dur = isTank ? 0.28 : 0.14;
+        const osc = ac.createOscillator(), gain = ac.createGain();
+        osc.connect(gain); gain.connect(bus);
+        osc.type = isTank ? 'sawtooth' : 'square';
+        osc.frequency.setValueAtTime(baseFreq, t);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.2, t + dur);
+        gain.gain.setValueAtTime(isTank ? 0.5 : 0.35, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.start(t); osc.stop(t + dur);
+        if (isTank) {
+            const src = ac.createBufferSource();
+            src.buffer = createNoiseBuffer(0.28, ac.sampleRate);
+            const lp = ac.createBiquadFilter(), nGain = ac.createGain();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(600, t);
+            lp.frequency.exponentialRampToValueAtTime(120, t + 0.28);
+            src.connect(lp); lp.connect(nGain); nGain.connect(bus);
+            nGain.gain.setValueAtTime(0.5, t);
+            nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+            src.start(t);
+        }
+    }
+
+    function playEnemyHurtSound(e) {
+        if (!shouldPlaySound()) return;
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const panner = createPanner(e.x, e.y);
+        const len = Math.floor(ac.sampleRate * 0.05);
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const bp = ac.createBiquadFilter(), gain = ac.createGain();
+        bp.type = 'bandpass'; bp.Q.value = 1.8;
+        const base = e.behavior === 'tank' ? 350 : e.maxHp >= 4 ? 500 : e.maxHp >= 3 ? 700 : 950;
+        bp.frequency.setValueAtTime(base + (Math.random() - 0.5) * 150, t);
+        bp.frequency.exponentialRampToValueAtTime(base * 0.4, t + 0.05);
+        src.connect(bp); bp.connect(gain); gain.connect(panner); panner.connect(masterGain);
+        gain.gain.setValueAtTime(0.28, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        src.start(t);
+    }
+
+    function playUiSound(type) {
+        if (!shouldPlaySound()) return;
+        ensureAudioCtx();
+        const ac = audioCtx, t = ac.currentTime;
+        const osc = ac.createOscillator(), gain = ac.createGain();
+        osc.connect(gain); gain.connect(masterGain);
+        if (type === 'buy') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, t);
+            osc.frequency.exponentialRampToValueAtTime(1760, t + 0.08);
+            gain.gain.setValueAtTime(0.22, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        } else if (type === 'levelup') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(440, t);
+            osc.frequency.linearRampToValueAtTime(880, t + 0.12);
+            gain.gain.setValueAtTime(0.18, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        } else if (type === 'advance') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(660, t);
+            gain.gain.setValueAtTime(0.12, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        } else if (type === 'hover') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1200, t);
+            gain.gain.setValueAtTime(0.04, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        }
+        osc.start(t); osc.stop(t + 0.4);
     }
 
     // --- Canvas Setup ---
@@ -395,6 +580,9 @@ window.addEventListener('DOMContentLoaded', function() {
     const SHOTGUN_DAMAGE        = 0.9;
     const SHOTGUN_COOLDOWN      = 1400;         // ms between bursts
 
+    const STAR_COUNT = 220;
+    const STAR_FIELD = 8000;
+
     // Deployment slots — square around player, computed dynamically so they follow movement
     const SLOT_OFFSET = 62;
     function getSlotPositions() {
@@ -449,6 +637,8 @@ window.addEventListener('DOMContentLoaded', function() {
     let circleHitFlashes  = [];
     let waveRings         = [];
     let enemyBullets      = [];
+    let damageNumbers     = [];
+    let stars             = [];
 
     let rafId = null;
     let lastTime = 0;
@@ -732,6 +922,7 @@ window.addEventListener('DOMContentLoaded', function() {
             zipping: false, zipDuration: 0,
             zipCooldown: Math.floor(Math.random() * 25),
             fireTick: Math.floor(Math.random() * 90),
+            telegraph: 0,
         });
     }
 
@@ -769,8 +960,10 @@ window.addEventListener('DOMContentLoaded', function() {
                 e.y += Math.sin(angle) * speed * 0.35;
                 // Fire at player every ~3 seconds (moveEnemies runs at 20ms, so 150 ticks)
                 e.fireTick = (e.fireTick || 0) + 1;
+                if (e.fireTick >= 90 && e.telegraph <= 0) e.telegraph = 60;
                 if (e.fireTick >= 150 && enemyBullets.length < 200) {
                     e.fireTick = 0;
+                    e.telegraph = 0;
                     const bAngle = Math.atan2(playerY - e.y, playerX - e.x);
                     const spread = (Math.random() - 0.5) * 0.3;
                     enemyBullets.push({
@@ -795,6 +988,8 @@ window.addEventListener('DOMContentLoaded', function() {
         if (now - state.waveLastUsed < WAVE_COOLDOWN) return;
         state.waveLastUsed = now;
         shakeCanvas(8);
+        playWaveBlastSound();
+        spawnWaveParticles();
         const wRange = state.waveRange || WAVE_RANGE;
         enemies.forEach(e => {
             const dx = e.x - playerX, dy = e.y - playerY;
@@ -895,6 +1090,16 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.stroke();
 
             } else if (e.behavior === 'tank') {
+                // Telegraph glow before firing
+                if (e.telegraph > 0) {
+                    e.telegraph--;
+                    const pulse = e.telegraph / 60;
+                    const tg = ctx.createRadialGradient(e.x, e.y, 2, e.x, e.y, 28 + (1 - pulse) * 14);
+                    tg.addColorStop(0, `rgba(255,40,0,${0.55 + 0.25 * Math.sin(e.telegraph * 0.4)})`);
+                    tg.addColorStop(1, 'rgba(255,20,0,0)');
+                    ctx.fillStyle = tg;
+                    ctx.beginPath(); ctx.arc(e.x, e.y, 42, 0, Math.PI * 2); ctx.fill();
+                }
                 // Large heavy cube — wider, bolder, dark red glow
                 ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 20;
                 const w = 22, h = 18, d = 8;
@@ -915,6 +1120,15 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.moveTo(e.x, e.y);
                 ctx.lineTo(e.x + Math.cos(bAng) * 14, e.y + Math.sin(bAng) * 14);
                 ctx.stroke();
+                // Barrel tip glow during telegraph
+                if (e.telegraph > 0) {
+                    const tipX = e.x + Math.cos(bAng) * 14;
+                    const tipY = e.y + Math.sin(bAng) * 14;
+                    ctx.fillStyle = `rgba(255,60,0,${0.6 + 0.3 * Math.sin(e.telegraph * 0.5)})`;
+                    ctx.shadowColor = '#ff3300'; ctx.shadowBlur = 16;
+                    ctx.beginPath(); ctx.arc(tipX, tipY, 4.5, 0, Math.PI * 2); ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
 
             } else {
                 // Wireframe cube — 9 visible edges (front face + top + right faces)
@@ -1183,6 +1397,7 @@ window.addEventListener('DOMContentLoaded', function() {
                     gatlingBullets.push({ x1: t.x, y1: t.y, x2: endX, y2: endY,
                         progress: 0, trail: [], damage: t.damage, fromTurret: true, isShotgun: true });
                 }
+                playShotgunSound(t.x, t.y);
             }
 
             // Body — wide hex base, double-barrel look
@@ -1618,13 +1833,14 @@ window.addEventListener('DOMContentLoaded', function() {
                 const fireDx = Math.cos(finalAngle), fireDy = Math.sin(finalAngle);
                 const edge   = rayToEdge(t.x, t.y, t.x + fireDx, t.y + fireDy);
                 gatlingBullets.push({ x1: t.x, y1: t.y, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: t.damage, fromTurret: true });
+                playGatlingSound(t.x, t.y, true);
             }
         });
     }
 
     // --- Particles ---
 function spawnExplosion(x, y) {
-        playExplosionSound();
+        playExplosionSound(x, y);
         shakeCanvas(7);
         const colors = ['#1bffc1', '#ffffff', '#ffff00', '#18B5D5', '#ff4444'];
         for (let i = 0; i < 22; i++) {
@@ -1663,13 +1879,175 @@ function spawnExplosion(x, y) {
     function renderParticles() {
         particles = particles.filter(p => p.alpha > 0);
         particles.forEach(p => {
-            p.x += p.vx; p.y += p.vy; p.vy += 0.15;
-            p.size *= 0.90; p.alpha -= 0.05;
+            p.x += p.vx; p.y += p.vy;
+            p.vy += p.gravity || 0.15;
+            if (p.grow) p.size *= p.grow; else p.size *= 0.90;
+            p.alpha -= p.decay || 0.05;
             ctx.globalAlpha = Math.max(0, p.alpha);
             ctx.fillStyle = p.color;
             ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
         });
         ctx.globalAlpha = 1;
+    }
+
+    // --- Starfield ---
+    function renderStars() {
+        const isLight = document.body.getAttribute('data-theme') === 'light';
+        const baseColor = isLight ? '#1e2030' : '#ffffff';
+        ctx.save();
+        stars.forEach(s => {
+            // Keep stars within a moving field around the player
+            const half = STAR_FIELD / 2;
+            while (s.x < playerX - half) s.x += STAR_FIELD;
+            while (s.x > playerX + half) s.x -= STAR_FIELD;
+            while (s.y < playerY - half) s.y += STAR_FIELD;
+            while (s.y > playerY + half) s.y -= STAR_FIELD;
+
+            // Parallax camera offset scaled by star depth
+            const sx = centerX + (s.x - playerX) * s.z;
+            const sy = centerY + (s.y - playerY) * s.z;
+
+            s.twinkle += s.twinkleSpeed;
+            const tw = 0.85 + 0.15 * Math.sin(s.twinkle);
+            ctx.globalAlpha = s.alpha * tw * (isLight ? 0.28 : 0.9);
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.arc(sx, sy, s.size * s.z, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+        ctx.globalAlpha = 1;
+    }
+
+    function renderGrid() {
+        const isLight = document.body.getAttribute('data-theme') === 'light';
+        const gridSize = 180;
+        const baseAlpha = isLight ? 0.09 : 0.14;
+        const col = isLight ? `rgba(30,32,48,${baseAlpha})` : `rgba(80,110,140,${baseAlpha})`;
+        const majorCol = isLight ? `rgba(30,32,48,${baseAlpha * 2.2})` : `rgba(100,140,175,${baseAlpha * 2.2})`;
+
+        ctx.save();
+        ctx.lineWidth = 1;
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+
+        const vLeft   = playerX - centerX;
+        const vRight  = playerX + centerX;
+        const vTop    = playerY - centerY;
+        const vBottom = playerY + centerY;
+
+        const startX = Math.floor(vLeft / gridSize) * gridSize;
+        const endX   = Math.ceil(vRight / gridSize) * gridSize;
+        const startY = Math.floor(vTop / gridSize) * gridSize;
+        const endY   = Math.ceil(vBottom / gridSize) * gridSize;
+
+        for (let x = startX; x <= endX; x += gridSize) {
+            const isMajor = (Math.round(x / gridSize) % 5 === 0);
+            ctx.strokeStyle = isMajor ? majorCol : col;
+            ctx.beginPath();
+            ctx.moveTo(x, vTop);
+            ctx.lineTo(x, vBottom);
+            ctx.stroke();
+        }
+        for (let y = startY; y <= endY; y += gridSize) {
+            const isMajor = (Math.round(y / gridSize) % 5 === 0);
+            ctx.strokeStyle = isMajor ? majorCol : col;
+            ctx.beginPath();
+            ctx.moveTo(vLeft, y);
+            ctx.lineTo(vRight, y);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // --- Damage Numbers ---
+    function spawnDamageNumber(x, y, amount, isKill) {
+        const color = isKill ? '#ffcc00' : '#ffffff';
+        damageNumbers.push({
+            x, y,
+            text: isKill ? `-${amount}` : `-${amount}`,
+            life: 40,
+            maxLife: 40,
+            vy: -0.8 - Math.random() * 0.6,
+            vx: (Math.random() - 0.5) * 1.2,
+            color,
+            isKill,
+        });
+    }
+
+    function renderDamageNumbers() {
+        damageNumbers = damageNumbers.filter(dn => dn.life > 0);
+        ctx.save();
+        ctx.font = '700 11px "Exo 2", sans-serif';
+        ctx.textAlign = 'center';
+        damageNumbers.forEach(dn => {
+            dn.life--;
+            dn.x += dn.vx;
+            dn.y += dn.vy;
+            const a = dn.life / dn.maxLife;
+            ctx.globalAlpha = a;
+            ctx.fillStyle = dn.color;
+            ctx.shadowColor = dn.isKill ? '#ff8800' : '#ffffff';
+            ctx.shadowBlur = dn.isKill ? 8 : 3;
+            ctx.fillText(dn.text, dn.x, dn.y);
+        });
+        ctx.restore();
+    }
+
+    function spawnImpactSparks(x, y, baseColor) {
+        const colors = [baseColor, '#ffffff', '#ffdd44'];
+        for (let i = 0; i < 6; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1.2 + Math.random() * 3.5;
+            particles.push({
+                x: x + (Math.random() - 0.5) * 4,
+                y: y + (Math.random() - 0.5) * 4,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 1 + Math.random() * 1.8,
+                alpha: 1,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                decay: 0.04 + Math.random() * 0.03,
+                gravity: 0.12
+            });
+        }
+    }
+
+    function spawnWaveParticles() {
+        const colors = ['#00eeff', '#44aaff', '#88ddff', '#ffffff'];
+        for (let i = 0; i < 32; i++) {
+            const angle = (Math.PI * 2 / 32) * i + (Math.random() - 0.5) * 0.25;
+            const speed = 3 + Math.random() * 5;
+            particles.push({
+                x: playerX, y: playerY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 1.5 + Math.random() * 2,
+                alpha: 1,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                decay: 0.025 + Math.random() * 0.02,
+                gravity: 0
+            });
+        }
+    }
+
+    function spawnJamSteam() {
+        for (let i = 0; i < 3; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 14 + Math.random() * 18;
+            particles.push({
+                x: playerX + Math.cos(angle) * dist,
+                y: playerY + Math.sin(angle) * dist,
+                vx: Math.cos(angle) * (0.5 + Math.random()),
+                vy: Math.sin(angle) * (0.5 + Math.random()) - 0.5,
+                size: 2 + Math.random() * 3,
+                alpha: 0.7,
+                color: 'rgba(200,210,220,0.65)',
+                decay: 0.015 + Math.random() * 0.01,
+                gravity: -0.03,
+                grow: 1.03
+            });
+        }
     }
 
     // --- Hit Logic ---
@@ -1686,11 +2064,16 @@ function spawnExplosion(x, y) {
             const multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
             addScore(Math.round(e.maxHp * 100 * multiplier));
             state.credits += 8 + (e.maxHp - 3) * 5; // 8 / 13 / 23+ per kill
+            playEnemyDeathSound(e);
             spawnExplosion(e.x, e.y);
+            spawnDamageNumber(e.x, e.y, Math.round(damage), true);
             return false;
         }
-        playBulletHitSound();
+        playBulletHitSound(e.x, e.y);
+        playEnemyHurtSound(e);
         e.hitTimer = 6; // flash white for 6 frames
+        spawnDamageNumber(e.x, e.y, Math.round(damage), false);
+        spawnImpactSparks(e.x, e.y, getEnemyColor(e.hp));
         return true;
     }
 
@@ -1777,7 +2160,7 @@ function spawnExplosion(x, y) {
         const fireDx = Math.cos(fireAngle), fireDy = Math.sin(fireAngle);
         const edge = rayToEdge(playerX, playerY, playerX + fireDx, playerY + fireDy);
 
-        playGatlingSound();
+        playGatlingSound(playerX, playerY, false);
         muzzleFlashAngle = fireAngle;
         muzzleFlashFrames = 4;
         gatlingBullets.push({ x1: playerX, y1: playerY, x2: edge.x, y2: edge.y, progress: 0, trail: [], damage: state.bulletDamage });
@@ -1904,6 +2287,7 @@ function spawnExplosion(x, y) {
     }
 
     function showCutscenePanel() {
+        playUiSound('advance');
         const beat = STORY_BEATS[cutsceneState.beatIdx];
         const panel = beat.panels[cutsceneState.panelIdx];
         cutsceneSpeaker.textContent = panel.speaker;
@@ -1932,6 +2316,7 @@ function spawnExplosion(x, y) {
     }
 
     function advanceCutscene() {
+        playUiSound('advance');
         const beat = STORY_BEATS[cutsceneState.beatIdx];
 
         // If still typing, skip to full text
@@ -1961,6 +2346,83 @@ function spawnExplosion(x, y) {
 
     cutsceneBtn.addEventListener('click', advanceCutscene);
 
+    // --- Intro Prologue ---
+    const INTRO_PANELS = [
+        { label: 'INCOMING TRANSMISSION', speaker: 'COMMAND', text: 'Cadet, this is Command. The block incursion is spreading faster than we can track.' },
+        { label: 'INCOMING TRANSMISSION', speaker: 'COMMAND', text: 'Forward bases are silent. Reinforcements are not coming. You are the last turret operator in this sector.' },
+        { label: 'PRIORITY ALERT',       speaker: 'COMMAND', text: 'Your orders are simple: hold the line. Survive. Make them pay for every meter.' },
+        { label: 'DEPLOYMENT READY',     speaker: 'COMMAND', text: 'The drop ship is in position. When you are ready, deploy and show those shapes what a cadet can do.' },
+    ];
+
+    let introState = { panelIdx: 0, typing: false, typeTimer: null };
+
+    function startIntro() {
+        introState.panelIdx = 0;
+        introCutscene.style.display = 'flex';
+        introCutscene.classList.remove('fadeout');
+        startMenu.style.display = 'block';
+        showIntroPanel();
+    }
+
+    function showIntroPanel() {
+        const panel = INTRO_PANELS[introState.panelIdx];
+        introLabel.textContent = panel.label;
+        introSpeaker.textContent = panel.speaker;
+        introText.textContent = '';
+        introText.classList.remove('done');
+        introProgress.textContent = `${introState.panelIdx + 1} / ${INTRO_PANELS.length}`;
+        introBtn.textContent = 'SKIP';
+        playUiSound('advance');
+
+        if (introState.typeTimer) clearInterval(introState.typeTimer);
+        introState.typing = true;
+        let charIdx = 0;
+        introState.typeTimer = setInterval(() => {
+            if (charIdx >= panel.text.length) {
+                clearInterval(introState.typeTimer);
+                introState.typeTimer = null;
+                introState.typing = false;
+                introText.classList.add('done');
+                const isLast = introState.panelIdx >= INTRO_PANELS.length - 1;
+                introBtn.textContent = isLast ? 'DEPLOY \u25B6' : 'NEXT \u25B6';
+                return;
+            }
+            introText.textContent += panel.text[charIdx];
+            charIdx++;
+        }, 28);
+    }
+
+    function advanceIntro() {
+        if (introState.typing) {
+            clearInterval(introState.typeTimer);
+            introState.typeTimer = null;
+            introState.typing = false;
+            introText.textContent = INTRO_PANELS[introState.panelIdx].text;
+            introText.classList.add('done');
+            const isLast = introState.panelIdx >= INTRO_PANELS.length - 1;
+            introBtn.textContent = isLast ? 'DEPLOY \u25B6' : 'NEXT \u25B6';
+            return;
+        }
+
+        introState.panelIdx++;
+        if (introState.panelIdx < INTRO_PANELS.length) {
+            showIntroPanel();
+        } else {
+            finishIntro();
+        }
+    }
+
+    function finishIntro() {
+        if (introState.typeTimer) { clearInterval(introState.typeTimer); introState.typeTimer = null; }
+        introCutscene.classList.add('fadeout');
+        setTimeout(() => {
+            introCutscene.style.display = 'none';
+            introCutscene.classList.remove('fadeout');
+        }, 650);
+    }
+
+    introBtn.addEventListener('click', advanceIntro);
+
     // --- Level Up ---
     function checkLevelUp() {
         const def = getLevelDef();
@@ -1971,6 +2433,7 @@ function spawnExplosion(x, y) {
         state.level++;
         state.levelKills = 0;
         levelDisplay.textContent = state.level;
+        updateDroneIntensity();
         if (isStoryLevel(state.level)) {
             const beat = getStoryBeat(state.level);
             startCutscene(beat);
@@ -1980,6 +2443,7 @@ function spawnExplosion(x, y) {
     }
 
     function showLevelUpScreen() {
+        playUiSound('levelup');
         levelHeading.textContent = `LEVEL ${state.level}`;
         levelDesc.textContent = LEVEL_DESCS[state.level - 1] || '';
         populateUpgrades();
@@ -2035,6 +2499,7 @@ function spawnExplosion(x, y) {
             if (state.credits < cost) return;
             state.credits -= cost;
             state.upgradeCounts[u.key] = (state.upgradeCounts[u.key] || 0) + 1;
+            playUiSound('buy');
             applyFn();
             populateUpgrades(); // re-render with updated credits + costs
         };
@@ -2085,6 +2550,7 @@ function spawnExplosion(x, y) {
             if (state.credits < cost) return;
             state.credits -= cost;
             state.upgradeCounts[key] = (state.upgradeCounts[key] || 0) + 1;
+            playUiSound('buy');
             deployFn();
             populateUpgrades();
         };
@@ -2260,10 +2726,15 @@ function spawnExplosion(x, y) {
 
         // Camera transform — world objects rendered relative to player position
         const camX = centerX - playerX, camY = centerY - playerY;
-        gameCanvas.style.backgroundPosition = `${camX % 100}px ${camY % 100}px`;
+
+        // Parallax starfield behind everything
+        renderStars();
+
         ctx.save();
         ctx.translate(camX, camY);
+        renderGrid();
         renderEnemies();
+        renderDamageNumbers();
         renderGatlingBullets();
         renderMiniTurrets();
         renderFlameTurrets();
@@ -2348,6 +2819,7 @@ function spawnExplosion(x, y) {
         // Overheat: cool down, handle jam
         if (state.jammed) {
             state.jamFrames--;
+            if (Math.random() < 0.25) spawnJamSteam();
             if (state.jamFrames <= 0) { state.jammed = false; state.heat = 20; }
         } else {
             state.heat = Math.max(0, state.heat - 1.2);
@@ -2399,7 +2871,125 @@ function spawnExplosion(x, y) {
         controlsOpen.style.display = 'none';
     }
 
+    // --- Deploy drop-in sequence ---
+    function deployLoop() {
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+        const camX = centerX - playerX, camY = centerY - playerY;
+        renderStars();
+        ctx.save();
+        ctx.translate(camX, camY);
+        renderGrid();
+        ctx.restore();
+
+        renderTurretArea();
+
+        const dur = 85;
+        state.deployFrames++;
+        const p = Math.min(1, state.deployFrames / dur);
+        // Ease-out cubic
+        const ease = 1 - Math.pow(1 - p, 3);
+        const scale = 0.2 + ease * 0.8;
+        const alpha = Math.min(1, p * 1.4);
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(scale, scale);
+        ctx.translate(-centerX, -centerY);
+        ctx.globalAlpha = alpha;
+        playerTurret.render();
+        ctx.restore();
+        ctx.globalAlpha = 1;
+
+        // Comms text progression
+        if (state.deployFrames === 1) {
+            deployLabel.textContent = 'DROP SHIP INBOUND';
+            deploySpeaker.textContent = 'COMMAND';
+            deployText.textContent = '';
+            typeDeployText('Stand by for combat drop. Turret systems initializing.');
+        } else if (state.deployFrames === Math.floor(dur * 0.55)) {
+            deployLabel.textContent = 'WEAPONS HOT';
+            typeDeployText('Hostile signatures detected. You are cleared to engage all targets.');
+        }
+
+        // Muzzle flash as turret comes online near the end
+        if (state.deployFrames === dur - 20) {
+            muzzleFlashAngle = Math.random() * Math.PI * 2;
+            muzzleFlashFrames = 4;
+            playGatlingSound(playerX, playerY, false);
+        }
+        if (muzzleFlashFrames > 0) renderGatlingMuzzleFlash();
+
+        if (state.deployFrames >= dur) {
+            finishDeploy();
+        }
+    }
+
+    let deployTypeTimer = null;
+    function typeDeployText(text) {
+        if (deployTypeTimer) { clearInterval(deployTypeTimer); deployTypeTimer = null; }
+        deployText.textContent = '';
+        deployText.classList.remove('done');
+        let i = 0;
+        deployTypeTimer = setInterval(() => {
+            if (i >= text.length) {
+                clearInterval(deployTypeTimer);
+                deployTypeTimer = null;
+                deployText.classList.add('done');
+                return;
+            }
+            deployText.textContent += text[i];
+            i++;
+        }, 22);
+    }
+
+    function finishDeploy() {
+        if (deployTypeTimer) { clearInterval(deployTypeTimer); deployTypeTimer = null; }
+        deployOverlay.classList.add('fadeout');
+        setTimeout(() => {
+            deployOverlay.style.display = 'none';
+            deployOverlay.classList.remove('fadeout');
+        }, 520);
+        state.deploying = false;
+        state.deployFrames = 0;
+        showGame();
+        startIntervals();
+    }
+
+    function deployFrame(timestamp) {
+        if (paused) return;
+        if (!lastTime) lastTime = timestamp;
+        const dt = Math.min(timestamp - lastTime, 100);
+        lastTime = timestamp;
+        logicAcc += dt;
+        let logicBudget = 5;
+        while (logicAcc >= 30 && logicBudget-- > 0) {
+            deployLoop();
+            logicAcc -= 30;
+        }
+        if (logicBudget < 0) logicAcc = 0;
+        if (state.deploying) rafId = requestAnimationFrame(deployFrame);
+    }
+
     // --- Reset ---
+    function initStars() {
+        stars = [];
+        const isLight = document.body.getAttribute('data-theme') === 'light';
+        for (let i = 0; i < STAR_COUNT; i++) {
+            const z = 0.25 + Math.random() * 0.75;
+            stars.push({
+                x: (Math.random() - 0.5) * STAR_FIELD,
+                y: (Math.random() - 0.5) * STAR_FIELD,
+                z,
+                size: 0.6 + Math.random() * 1.4,
+                alpha: 0.35 + Math.random() * 0.65,
+                twinkle: Math.random() * Math.PI * 2,
+                twinkleSpeed: 0.03 + Math.random() * 0.08,
+                color: isLight ? '#1e2030' : '#ffffff'
+            });
+        }
+    }
+
     function defaults() {
         state = {
             score: 0,
@@ -2436,6 +3026,8 @@ function spawnExplosion(x, y) {
         leftTouch = null; rightTouch = null; mouseIsDown = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
         miniTurrets = []; flameTurrets = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
+        damageNumbers = [];
+        initStars();
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
@@ -2510,6 +3102,7 @@ function spawnExplosion(x, y) {
         moveAcc = 0; logicAcc = 0; spawnAcc = 0; lastTime = 0;
         gameRunning = true;
         paused      = false;
+        startDrone();
         rafId = requestAnimationFrame(gameFrame);
     }
 
@@ -2532,7 +3125,14 @@ function spawnExplosion(x, y) {
     // --- Button Listeners ---
     startButton.addEventListener('click', function() {
         startMenu.style.display = 'none';
-        showGame(); defaults(); startIntervals();
+        deployOverlay.style.display = 'flex';
+        defaults();
+        state.deploying = true;
+        state.deployFrames = 0;
+        gameRunning = true;
+        paused = false;
+        moveAcc = 0; logicAcc = 0; spawnAcc = 0; lastTime = 0;
+        rafId = requestAnimationFrame(deployFrame);
     });
 
     continueBtn.addEventListener('click', function() {
@@ -2572,6 +3172,35 @@ function spawnExplosion(x, y) {
         applyTheme(document.body.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
     });
 
+    // Mute toggle
+    function applyMute(muted) {
+        soundEnabled = !muted;
+        if (masterGain) masterGain.gain.value = soundEnabled ? 1 : 0;
+        if (muted) {
+            muteToggle.textContent = '🔇 MUTED';
+            muteToggle.classList.add('muted');
+            stopDrone();
+        } else {
+            muteToggle.textContent = '🔊 SOUND';
+            muteToggle.classList.remove('muted');
+            if (gameRunning && !paused) startDrone();
+        }
+        localStorage.setItem('blockshooter_muted', muted ? '1' : '0');
+    }
+    applyMute(localStorage.getItem('blockshooter_muted') === '1');
+    muteToggle.addEventListener('click', () => {
+        applyMute(soundEnabled);
+    });
+
+    // Subtle hover click on all buttons
+    let lastHoverSound = 0;
+    document.addEventListener('mouseover', e => {
+        if (e.target.tagName === 'BUTTON') {
+            const now = Date.now();
+            if (now - lastHoverSound > 80) { playUiSound('hover'); lastHoverSound = now; }
+        }
+    });
+
     // Pause overlay — click/tap to resume
     pauseOverlay.addEventListener('click', () => togglePause());
 
@@ -2587,6 +3216,7 @@ function spawnExplosion(x, y) {
 
     function gameLose() {
         clearAllIntervals();
+        stopDrone();
         pauseOverlay.style.display = 'none';
         cutscene.style.display = 'none';
         if (cutsceneState.typeTimer) { clearInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
@@ -2599,5 +3229,8 @@ function spawnExplosion(x, y) {
         loseMenu.style.display = 'block';
         hideGame();
     }
+
+    // Start the experience with the intro prologue
+    startIntro();
 
 });
