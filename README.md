@@ -1,5 +1,7 @@
 ![Blockshooter Wireframe](images/wireframe.png)
 
+> **Note:** This is a retrospective dev diary from the original prototype. The current architecture (single `requestAnimationFrame` loop, object-based enemies, upgrade shop, cutscenes, and a boss fight) is documented in [CLAUDE.md](CLAUDE.md).
+
 ## Introduction
 
 From the beginning, I wanted to do a point and click shooter so I knew that I needed to implement some sort of cursor tracking and event listeners at the cursor for the shooting mechanic.

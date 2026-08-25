@@ -39,16 +39,13 @@ window.addEventListener('DOMContentLoaded', function() {
     const bottomBar      = document.querySelector('#bottombar');
     const healthText     = document.querySelector('#healthtext');
     const scoreBoard     = document.querySelector('#score');
+    const progressKills  = document.querySelector('#progresskills');
     const startButton    = document.querySelector('#startbutton');
     const livesText      = document.querySelector('#lives');
     const healthBar      = document.querySelector('#health');
-    const turret         = document.querySelector('#turret');
-    const creditsDisplay = document.querySelector('#credits');
-    const weaponDisplay  = document.querySelector('#activeweapon');
     const levelDisplay   = document.querySelector('#levelnum');
     const levelHeading   = document.querySelector('#levelheading');
     const levelDesc      = document.querySelector('#leveldesc');
-    const shopCredits      = document.querySelector('#shopcredits');
     const weaponShop       = document.querySelector('#weaponshop');
     const titleEl          = document.querySelector('#gametitle');
     const streakDisplay    = document.querySelector('#streak-display');
@@ -60,6 +57,33 @@ window.addEventListener('DOMContentLoaded', function() {
     const pauseOverlay     = document.querySelector('#pause-overlay');
     const ctx              = gameCanvas.getContext('2d');
     const miniturretCountEl = document.querySelector('#miniturret-count');
+
+    // roundRect polyfill for Safari < 16 / older browsers
+    if (!ctx.roundRect) {
+        CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+            if (typeof r === 'number') r = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+            this.moveTo(x + r, y);
+            this.lineTo(x + w - r, y);
+            this.quadraticCurveTo(x + w, y, x + w, y + r);
+            this.lineTo(x + w, y + h - r);
+            this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            this.lineTo(x + r, y + h);
+            this.quadraticCurveTo(x, y + h, x, y + h - r);
+            this.lineTo(x, y + r);
+            this.quadraticCurveTo(x, y, x + r, y);
+            return this;
+        };
+    }
+
+    // --- Safe localStorage wrapper (private browsing / storage-disabled browsers) ---
+    const storage = {
+        get(key, fallback = '') {
+            try { return localStorage.getItem(key) ?? fallback; } catch (e) { return fallback; }
+        },
+        set(key, value) {
+            try { localStorage.setItem(key, value); } catch (e) { /* ignore */ }
+        },
+    };
 
     // --- Audio ---
     let audioCtx = null;
@@ -440,14 +464,15 @@ window.addEventListener('DOMContentLoaded', function() {
         bus.gain.value = 0.6;
         bus.connect(panner); panner.connect(masterGain);
         const isTank = e.behavior === 'tank';
-        const baseFreq = isTank ? 90 : (e.maxHp >= 4 ? 220 : e.maxHp >= 3 ? 320 : 420);
-        const dur = isTank ? 0.28 : 0.14;
+        const isBoss = e.behavior === 'boss';
+        const baseFreq = isBoss ? 50 : isTank ? 90 : (e.maxHp >= 4 ? 220 : e.maxHp >= 3 ? 320 : 420);
+        const dur = isBoss ? 0.6 : isTank ? 0.28 : 0.14;
         const osc = ac.createOscillator(), gain = ac.createGain();
         osc.connect(gain); gain.connect(bus);
-        osc.type = isTank ? 'sawtooth' : 'square';
+        osc.type = isTank || isBoss ? 'sawtooth' : 'square';
         osc.frequency.setValueAtTime(baseFreq, t);
         osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.2, t + dur);
-        gain.gain.setValueAtTime(isTank ? 0.5 : 0.35, t);
+        gain.gain.setValueAtTime(isBoss ? 0.7 : isTank ? 0.5 : 0.35, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
         osc.start(t); osc.stop(t + dur);
         if (isTank) {
@@ -519,20 +544,37 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Canvas Setup ---
-    let canvasWidth, canvasHeight, centerX, centerY;
+    let canvasWidth, canvasHeight, centerX, centerY, dpr = 1;
 
     function resizeCanvas() {
+        dpr = Math.min(window.devicePixelRatio || 1, 2); // cap at 2 for perf
         canvasWidth  = window.innerWidth;
         canvasHeight = window.innerHeight;
-        gameCanvas.width          = canvasWidth;
-        gameCanvas.height         = canvasHeight;
-        gameCanvas.style.width    = canvasWidth  + 'px';
-        gameCanvas.style.height   = canvasHeight + 'px';
+        gameCanvas.width  = Math.round(canvasWidth  * dpr);
+        gameCanvas.height = Math.round(canvasHeight * dpr);
         centerX = canvasWidth  / 2;
         centerY = canvasHeight / 2;
     }
     resizeCanvas();
     window.addEventListener('resize', () => requestAnimationFrame(resizeCanvas));
+
+    // --- Theme + reduced-motion detected state (updated by listeners below) ---
+    let isLightTheme = document.body.getAttribute('data-theme') === 'light';
+    let reduceMotion = false;
+    let screenFxEnabled = true; // shake / chromatic split (off when reduced motion)
+    let hitStopEnabled  = true; // slow-mo on kills (capped when reduced motion)
+    let cssAnimEnabled  = true; // CSS animations via body.no-anim class
+
+    const reducedMotionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function applyMotionPrefs() {
+        reduceMotion    = reducedMotionMq.matches;
+        screenFxEnabled = !reduceMotion;
+        hitStopEnabled  = !reduceMotion;
+        cssAnimEnabled  = !reduceMotion;
+        document.body.classList.toggle('no-anim', !cssAnimEnabled);
+    }
+    if (reducedMotionMq.addEventListener) reducedMotionMq.addEventListener('change', applyMotionPrefs);
+    applyMotionPrefs();
 
     // --- Player position (mutable — updated by WASD) ---
     let playerX = centerX;
@@ -585,6 +627,12 @@ window.addEventListener('DOMContentLoaded', function() {
     const SHOTGUN_TURRET_MAX    = 4;
     const SHOTGUN_SLOT_OFFSET   = 95;
     const SHOTGUN_RANGE         = 160;
+    const ENEMY_BULLET_CAP      = 200;
+    const HIT_RADIUS            = 72;   // contact radius for player-vs-enemy/bullet
+
+    const BOSS_BASE_HP       = 260;
+    const BOSS_HP_PER_CYCLE  = 120;    // extra HP per boss cycle after the first
+    const BOSS_KILL_CREDITS  = 500;
     const SHOTGUN_PELLETS       = 7;
     const SHOTGUN_SPREAD        = Math.PI / 9;  // 20° total arc
     const SHOTGUN_DAMAGE        = 0.9;
@@ -623,7 +671,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     function getNextShotgunSlot() {
         for (let i = 0; i < SHOTGUN_TURRET_MAX; i++) {
-            if (!flameTurrets.some(t => t.slotIdx === i)) return i;
+            if (!shotgunTurrets.some(t => t.slotIdx === i)) return i;
         }
         return -1;
     }
@@ -640,6 +688,96 @@ window.addEventListener('DOMContentLoaded', function() {
         { key: 'waverange', name: 'WAVE RANGE',   baseCost: 105, costStep: 77,  desc: 'Wider blast radius. +50px wave range.',              apply: s => { s.waveRange     = (s.waveRange  || WAVE_RANGE) + 50; } },
     ];
 
+    // --- Pause-aware interval timers (typing, cinematics) ---
+    const activeTimers = new Set();
+    const activeTimeouts = new Set();
+    const pauseWallClocks = []; // { getRemaining: () => ms, set: (ms) => void }
+
+    function makePauseInterval(fn, ms) {
+        const t = { fn, ms, remaining: ms, lastStart: Date.now(), id: null, paused: false };
+        t.id = setInterval(() => {
+            if (t.paused) return;
+            fn();
+        }, ms);
+        activeTimers.add(t);
+        return t;
+    }
+    function clearPauseInterval(t) {
+        if (!t) return;
+        clearInterval(t.id);
+        activeTimers.delete(t);
+    }
+    function makePauseTimeout(fn, ms) {
+        const t = { fn, ms, remaining: ms, lastStart: Date.now(), id: null, paused: false };
+        t.id = setTimeout(() => { activeTimeouts.delete(t); fn(); }, ms);
+        activeTimeouts.add(t);
+        return t;
+    }
+    function clearPauseTimeout(t) {
+        if (!t) return;
+        clearTimeout(t.id);
+        activeTimeouts.delete(t);
+    }
+    // Register a wall-clock (Date.now-based) deadline so pause can freeze it.
+    // getter returns ms remaining; setter restores a new deadline from ms remaining.
+    function trackWallClock(getRemaining, setRemaining) {
+        const rec = { getRemaining, setRemaining, saved: 0 };
+        pauseWallClocks.push(rec);
+        return rec;
+    }
+    function untrackWallClock(rec) {
+        const i = pauseWallClocks.indexOf(rec);
+        if (i >= 0) pauseWallClocks.splice(i, 1);
+    }
+    function pauseAllTimers() {
+        const now = Date.now();
+        activeTimers.forEach(t => { t.paused = true; t.remaining -= now - t.lastStart; if (t.remaining < 0) t.remaining = 0; });
+        activeTimeouts.forEach(t => { t.paused = true; t.remaining -= now - t.lastStart; if (t.remaining < 0) t.remaining = 0; });
+        pauseWallClocks.forEach(r => { r.saved = r.getRemaining(); });
+    }
+    function resumeAllTimers() {
+        const now = Date.now();
+        activeTimers.forEach(t => { t.paused = false; t.lastStart = now; });
+        activeTimeouts.forEach(t => {
+            if (!t.paused) return;
+            t.paused = false; t.lastStart = now;
+            clearTimeout(t.id);
+            t.id = setTimeout(() => { activeTimeouts.delete(t); t.fn(); }, t.remaining);
+        });
+        pauseWallClocks.forEach(r => { r.setRemaining(Math.max(0, r.saved)); });
+    }
+
+    // Shared typewriter — types text into el at ms per char, pauses with the game.
+    // onDone fires when typing completes naturally or is skipped.
+    function startTypewriter(state, text, el, ms, onDone) {
+        clearPauseInterval(state.typeTimer);
+        el.textContent = '';
+        el.classList.remove('done');
+        let i = 0;
+        state.typing = true;
+        state.typeTimer = makePauseInterval(() => {
+            if (i >= text.length) {
+                clearPauseInterval(state.typeTimer);
+                state.typeTimer = null;
+                state.typing = false;
+                el.classList.add('done');
+                if (onDone) onDone();
+                return;
+            }
+            el.textContent += text[i];
+            i++;
+        }, ms);
+    }
+
+    function skipTypewriter(state, text, el, onDone) {
+        clearPauseInterval(state.typeTimer);
+        state.typeTimer = null;
+        state.typing = false;
+        el.textContent = text;
+        el.classList.add('done');
+        if (onDone) onDone();
+    }
+
     // --- Game State ---
     let state = {};
     let enemies     = [];
@@ -650,7 +788,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let muzzleFlashAngle = 0;
 
     let miniTurrets       = [];
-    let flameTurrets      = [];
+    let shotgunTurrets    = [];
     let circleHitFlashes  = [];
     let waveRings         = [];
     let enemyBullets      = [];
@@ -673,6 +811,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let cursorPosX = playerX;
     let cursorPosY = 0;
     let mouseIsDown = false;
+    let lastTurretCount = -1;
 
     // Touch state — dual-zone controls
     let leftTouch  = null; // { id, originX, originY, dx, dy }
@@ -759,8 +898,8 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Input ---
     gameCanvas.addEventListener('mousemove', e => {
-        cursorPosX = e.clientX - gameCanvas.offsetLeft;
-        cursorPosY = e.clientY - gameCanvas.offsetTop;
+        cursorPosX = e.clientX;
+        cursorPosY = e.clientY;
     });
     gameCanvas.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
@@ -789,8 +928,8 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Touch Controls (dual-zone) ---
     function touchCanvasPos(touch) {
-        const r = gameCanvas.getBoundingClientRect();
-        return { x: touch.clientX - r.left, y: touch.clientY - r.top };
+        // Canvas is fixed at the viewport origin (0,0)
+        return { x: touch.clientX, y: touch.clientY };
     }
 
     const AIM_DEAD = 8; // px of jitter filter before aim updates
@@ -898,6 +1037,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Screen Shake ---
     function shakeCanvas(intensity) {
+        if (!screenFxEnabled) return;
         const dur = 220;
         const start = Date.now();
         const tick = () => {
@@ -952,8 +1092,76 @@ window.addEventListener('DOMContentLoaded', function() {
         if (behavior === 'zigzag') maybeRadio('zigzagFirst');
     }
 
+    const BOSS_RADIO_LINES = [
+        'Impressive. Let us begin properly.',
+        'You break my children well. But can you break me?',
+        'Again. Show me everything you are.',
+        'The signal grows louder. We are almost one.',
+    ];
+
+    // --- The Blockmaster ---
+    function spawnBoss() {
+        const cycle  = Math.floor((state.level - 30) / 5); // 0 at L30, 1 at L35, ...
+        const hp     = BOSS_BASE_HP + cycle * BOSS_HP_PER_CYCLE + Math.floor(state.level * 4);
+        const angle  = Math.random() * Math.PI * 2;
+        const spawnR = Math.min(canvasWidth, canvasHeight) * 0.35;
+        const x = playerX + Math.cos(angle) * (spawnR + 300);
+        const y = playerY + Math.sin(angle) * (spawnR + 300);
+        const boss = {
+            x, y, hp, maxHp: hp, hitTimer: 0,
+            behavior: 'boss', size: 34,
+            bossPhase: 0,      // 0 orbit-in, 1 combat
+            orbitAngle: Math.atan2(y - playerY, x - playerX),
+            fireTick: 0,
+            telegraph: 0,
+            trail: [], trailTick: 0,
+        };
+        enemies.push(boss);
+        state.bossActive = true;
+        queueRadio('THE BLOCKMASTER', BOSS_RADIO_LINES[Math.min(cycle, BOSS_RADIO_LINES.length - 1)], true);
+    }
+
+    function moveBoss(e) {
+        e.bossTick = (e.bossTick || 0) + 1;
+        if (e.bossPhase === 0) {
+            // Approach until 260px out, then settle into orbit
+            const angle = Math.atan2(playerY - e.y, playerX - e.x);
+            e.x += Math.cos(angle) * 1.6;
+            e.y += Math.sin(angle) * 1.6;
+            if (Math.hypot(playerX - e.x, playerY - e.y) <= 260) e.bossPhase = 1;
+        } else {
+            // Strafe orbit at ~250px, drifting slowly
+            const angToPlayer = Math.atan2(playerY - e.y, playerX - e.x);
+            const strafe = angToPlayer + Math.PI / 2;
+            const spd = 0.85;
+            e.x += Math.cos(strafe) * spd;
+            e.y += Math.sin(strafe) * spd;
+            // Gentle radial correction to hold the orbit ring
+            const d = Math.hypot(playerX - e.x, playerY - e.y);
+            if (d > 290) { e.x += Math.cos(angToPlayer) * 0.8; e.y += Math.sin(angToPlayer) * 0.8; }
+            else if (d < 210) { e.x -= Math.cos(angToPlayer) * 0.8; e.y -= Math.sin(angToPlayer) * 0.8; }
+
+            // Radial burst every ~6.7s of movement ticks (200 ticks × 20ms)
+            e.fireTick++;
+            if (e.fireTick >= 140 && e.telegraph <= 0) e.telegraph = 60;
+            if (e.fireTick >= 200 && enemyBullets.length < ENEMY_BULLET_CAP - 30) {
+                e.fireTick = 0;
+                e.telegraph = 0;
+                const count = 10 + Math.min(10, Math.floor(state.level / 4));
+                const baseA = Math.atan2(playerY - e.y, playerX - e.x) + Math.random() * 0.6;
+                for (let i = 0; i < count; i++) {
+                    const a = baseA + (i / count) * Math.PI * 2;
+                    enemyBullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 1.7, vy: Math.sin(a) * 1.7 });
+                }
+            }
+        }
+    }
+
     function moveEnemies() {
         enemies.forEach(e => {
+            if (e.behavior === 'boss') {
+                moveBoss(e);
+            } else {
             const angle = Math.atan2(playerY - e.y, playerX - e.x);
             let speed   = state.perFrameDistance;
 
@@ -987,7 +1195,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 // Fire at player every ~3 seconds (moveEnemies runs at 20ms, so 150 ticks)
                 e.fireTick = (e.fireTick || 0) + 1;
                 if (e.fireTick >= 90 && e.telegraph <= 0) e.telegraph = 60;
-                if (e.fireTick >= 150 && enemyBullets.length < 200) {
+                if (e.fireTick >= 150 && enemyBullets.length < ENEMY_BULLET_CAP) {
                     e.fireTick = 0;
                     e.telegraph = 0;
                     const bAngle = Math.atan2(playerY - e.y, playerX - e.x);
@@ -1001,6 +1209,7 @@ window.addEventListener('DOMContentLoaded', function() {
             } else {
                 e.x += Math.cos(angle) * speed;
                 e.y += Math.sin(angle) * speed;
+            }
             }
 
             // Wave push — decays each movement tick
@@ -1034,12 +1243,100 @@ window.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    function renderBoss(e, col) {
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        const t = Date.now() / 1000;
+
+        // Rotating outer hex ring — slow, ominous
+        ctx.save();
+        ctx.rotate(t * 0.3);
+        ctx.beginPath();
+        for (let v = 0; v < 6; v++) {
+            const a = (Math.PI / 3) * v;
+            v === 0 ? ctx.moveTo(Math.cos(a) * 46, Math.sin(a) * 46)
+                    : ctx.lineTo(Math.cos(a) * 46, Math.sin(a) * 46);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(80,220,255,0.6)';
+        ctx.lineWidth   = 2;
+        ctx.shadowColor = 'rgba(60,200,255,0.5)';
+        ctx.shadowBlur  = 18;
+        ctx.stroke();
+        // Inset second ring
+        ctx.rotate(-t * 0.5);
+        ctx.beginPath();
+        for (let v = 0; v < 6; v++) {
+            const a = (Math.PI / 3) * v + Math.PI / 6;
+            v === 0 ? ctx.moveTo(Math.cos(a) * 38, Math.sin(a) * 38)
+                    : ctx.lineTo(Math.cos(a) * 38, Math.sin(a) * 38);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(110,80,255,0.4)';
+        ctx.lineWidth   = 1;
+        ctx.stroke();
+        ctx.restore();
+
+        // Telegraph — full-body pulse before burst
+        if (e.telegraph > 0) {
+            e.telegraph--;
+            const pulse = 0.5 + 0.5 * Math.sin(e.telegraph * 0.4);
+            const tg = ctx.createRadialGradient(0, 0, 10, 0, 0, 52);
+            tg.addColorStop(0, `rgba(255,40,80,${0.35 * pulse})`);
+            tg.addColorStop(1, 'rgba(255,20,60,0)');
+            ctx.fillStyle = tg;
+            ctx.beginPath(); ctx.arc(0, 0, 52, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Body — layered dark cube
+        ctx.shadowColor = '#aa2266';
+        ctx.shadowBlur  = 26;
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = 2.6;
+        ctx.lineJoin    = 'round';
+        const w = 30, h = 30, d = 12, fx = -w / 2, fy = -h / 2;
+        ctx.strokeRect(fx, fy, w, h);
+        ctx.beginPath();
+        ctx.moveTo(fx,     fy);     ctx.lineTo(fx + d,     fy - d);
+        ctx.moveTo(fx + w, fy);     ctx.lineTo(fx + w + d, fy - d);
+        ctx.moveTo(fx + d, fy - d); ctx.lineTo(fx + w + d, fy - d);
+        ctx.moveTo(fx + w, fy + h); ctx.lineTo(fx + w + d, fy + h - d);
+        ctx.moveTo(fx + w + d, fy - d); ctx.lineTo(fx + w + d, fy + h - d);
+        ctx.stroke();
+
+        // Pulsing core
+        const coreR = 9 + 3 * Math.sin(t * 5) + (e.telegraph > 0 ? 4 : 0);
+        const core = ctx.createRadialGradient(0, 0, 0, 0, 0, coreR * 2.4);
+        core.addColorStop(0,   'rgba(255,80,160,1)');
+        core.addColorStop(0.45,'rgba(220,40,120,0.55)');
+        core.addColorStop(1,   'rgba(180,20,90,0)');
+        ctx.fillStyle = core;
+        ctx.beginPath(); ctx.arc(0, 0, coreR * 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffd8ee';
+        ctx.beginPath(); ctx.arc(0, 0, coreR * 0.55, 0, Math.PI * 2); ctx.fill();
+
+        // Boss HP bar — wide, centered above, distinctive cyan/magenta split
+        const bw = 90, bh = 4;
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(-bw / 2, -e.size - 18, bw, bh);
+        const hpR = Math.max(0, e.hp / e.maxHp);
+        const barGrad = ctx.createLinearGradient(-bw / 2, 0, bw / 2, 0);
+        barGrad.addColorStop(0, '#00eeff');
+        barGrad.addColorStop(1, '#ff44aa');
+        ctx.fillStyle = barGrad;
+        ctx.fillRect(-bw / 2, -e.size - 18, bw * hpR, bh);
+        ctx.restore();
+    }
+
     function renderEnemies() {
         enemies.forEach(e => {
             if (e.hitTimer > 0) e.hitTimer--;
             const ratio      = e.hp / e.maxHp;
             const flashColor = ratio > 0.66 ? '#ff8844' : ratio > 0.33 ? '#ffee44' : '#aaffee';
-            const baseCol    = e.behavior === 'tank' ? '#cc3300' : getEnemyColor(e.hp);
+            const baseCol    = e.behavior === 'tank' ? '#cc3300'
+                             : e.behavior === 'boss' ? '#ff44aa'
+                             : getEnemyColor(e.hp);
             const col        = e.hitTimer > 0 ? flashColor : baseCol;
 
             // Sample trail every 3rd render frame
@@ -1050,29 +1347,7 @@ window.addEventListener('DOMContentLoaded', function() {
                 if (e.trail.length > 16) e.trail.pop();
             }
 
-            // Fading trail — shape matches enemy type
-            if (e.trail && e.trail.length > 0) {
-                const n = e.trail.length;
-                ctx.strokeStyle = col;
-                ctx.lineWidth   = 0.7;
-                e.trail.forEach((pos, i) => {
-                    ctx.globalAlpha = (1 - (i + 1) / (n + 1)) * 0.40;
-                    if (e.behavior === 'zigzag') {
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y - 6);
-                        ctx.lineTo(pos.x - 5, pos.y + 4);
-                        ctx.lineTo(pos.x + 5, pos.y + 4);
-                        ctx.closePath(); ctx.stroke();
-                    } else if (e.behavior === 'zipper') {
-                        ctx.beginPath();
-                        ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
-                        ctx.stroke();
-                    } else {
-                        ctx.strokeRect(pos.x - 5, pos.y - 5, 10, 10);
-                    }
-                });
-                ctx.globalAlpha = 1;
-            }
+            if (e.behavior === 'boss') { renderBoss(e, col); return; }
 
             const edgeCol = (e.behavior === 'zipper' && e.zipping) ? '#ffffff' : col;
             ctx.save();
@@ -1218,109 +1493,56 @@ window.addEventListener('DOMContentLoaded', function() {
         ctx.beginPath(); ctx.arc(x, y, 20, 0, 2 * Math.PI); ctx.stroke();
     }
 
-    function drawLaser(x1, y1, x2, y2, alpha) {
-        ctx.save(); ctx.lineCap = 'round';
-        ctx.globalAlpha = alpha * 0.3; ctx.shadowColor = '#0066ff'; ctx.shadowBlur = 40;
-        ctx.strokeStyle = '#0044ff'; ctx.lineWidth = 14;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-        ctx.globalAlpha = alpha * 0.8; ctx.shadowBlur = 20;
-        ctx.strokeStyle = '#4499ff'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-        ctx.globalAlpha = alpha; ctx.shadowBlur = 8;
-        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-        ctx.restore();
-    }
-
-    function drawTrail(l) {
-        if (!l.type || l.type === 'laser') {
-            drawLaser(l.x1, l.y1, l.x2, l.y2, l.alpha);
-        } else if (l.type === 'bullet') {
-            // Full-length tracer: dim yellow line + bright white core near muzzle
-            const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
-            const mag = Math.hypot(dx, dy) || 1;
-            ctx.save();
-            ctx.lineCap = 'round';
-            ctx.globalAlpha = l.alpha * 0.7;
-            ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 8;
-            ctx.strokeStyle = '#ffdd66'; ctx.lineWidth = 1.5;
-            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
-            ctx.globalAlpha = l.alpha;
-            ctx.shadowBlur = 14;
-            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(l.x1, l.y1);
-            ctx.lineTo(l.x1 + (dx / mag) * 70, l.y1 + (dy / mag) * 70);
-            ctx.stroke();
-            ctx.restore();
-        } else if (l.type === 'shell') {
-            // Shotgun pellet — warm orange line to range endpoint
-            ctx.save();
-            ctx.globalAlpha = l.alpha;
-            ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 8;
-            ctx.strokeStyle = '#ffaa44'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
-            ctx.restore();
-        } else if (l.type === 'rail') {
-            // Silver/indigo full-length piercing streak
-            ctx.save();
-            ctx.lineCap = 'round';
-            ctx.globalAlpha = l.alpha * 0.4;
-            ctx.shadowColor = '#aabbff'; ctx.shadowBlur = 35;
-            ctx.strokeStyle = '#6677cc'; ctx.lineWidth = 10;
-            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
-            ctx.globalAlpha = l.alpha;
-            ctx.shadowBlur = 10;
-            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
-            ctx.restore();
-        }
-    }
-
     function renderGatlingBullets() {
         const remaining = [];
+        const bulletsToKill = new Set();
+        const enemiesToKill = new Set();
+
+        // 1 — physics + hit detection (no rendering side effects)
         gatlingBullets.forEach(b => {
             const prevProgress = b.progress;
             b.progress += b.isShotgun ? 0.10 : 0.05;
-            if (b.progress >= 1) return;
+            if (b.progress >= 1) { bulletsToKill.add(b); return; }
             const px = b.x1 + (b.x2 - b.x1) * prevProgress;
             const py = b.y1 + (b.y2 - b.y1) * prevProgress;
             const cx = b.x1 + (b.x2 - b.x1) * b.progress;
             const cy = b.y1 + (b.y2 - b.y1) * b.progress;
-            // Segment hit detection — enemies
-            let hit = false;
-            enemies = enemies.filter(e => {
-                if (!hit && rayHitsEnemy(e, px, py, cx, cy)) {
-                    hit = true; return hitEnemy(e, b.damage);
+            for (let i = 0; i < enemies.length; i++) {
+                const e = enemies[i];
+                if (enemiesToKill.has(e)) continue;
+                if (rayHitsEnemy(e, px, py, cx, cy)) {
+                    if (!hitEnemy(e, b.damage)) enemiesToKill.add(e);
+                    bulletsToKill.add(b);
+                    break;
                 }
-                return true;
-            });
-            if (hit) return;
+            }
             b.trail.unshift({ x: cx, y: cy });
             if (b.trail.length > 12) b.trail.pop();
-            remaining.push(b);
+        });
 
-            // Ground glow — cheap radial gradient, scales with damage upgrades
+        if (enemiesToKill.size > 0) enemies = enemies.filter(e => !enemiesToKill.has(e));
+
+        // 2 — render survivors
+        gatlingBullets.forEach(b => {
+            if (bulletsToKill.has(b)) return;
+            remaining.push(b);
+            const cx = b.x1 + (b.x2 - b.x1) * b.progress;
+            const cy = b.y1 + (b.y2 - b.y1) * b.progress;
+
+            // Ground glow — precomputed sprite, tinted + scaled
             const upgradeLevel = Math.min(3, Math.max(0, Math.round((b.damage - 0.45) / 0.5)));
             const glowR = Math.min(55, 15 + upgradeLevel * 13);
             const glowA = Math.min(0.50, 0.18 + upgradeLevel * 0.11);
-            const grd   = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-            grd.addColorStop(0,   `rgba(255,220,100,${glowA})`);
-            grd.addColorStop(0.4, `rgba(255,140,20,${glowA * 0.55})`);
-            grd.addColorStop(1,   'rgba(255,60,0,0)');
+            const glow = getBulletGlowSprite();
             ctx.save();
-            ctx.fillStyle = grd;
-            ctx.beginPath();
-            ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.globalAlpha = glowA;
+            ctx.drawImage(glow, cx - glowR, cy - glowR, glowR * 2, glowR * 2);
             ctx.restore();
 
-            // Tracer trail — cyan for turret bullets, yellow for player
+            // Tracer trail — plain strokes, no per-segment shadowing
             const tracerColor = b.fromTurret ? '#00eeff' : '#ffdd44';
-            const tracerGlow  = b.fromTurret ? '#00ccff' : '#ffcc00';
             ctx.save();
             ctx.lineCap = 'round';
-            ctx.shadowColor = tracerGlow; ctx.shadowBlur = 8;
             const n = b.trail.length;
             for (let i = 0; i < n - 1; i++) {
                 const t = i / (n - 1);
@@ -1333,14 +1555,31 @@ window.addEventListener('DOMContentLoaded', function() {
                 ctx.stroke();
             }
             ctx.globalAlpha = 1;
-            ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 14;
             ctx.fillStyle = '#ffffff';
             const dotR = b.fromTurret ? 2 : 2 + (state.bulletRadius || 0) * 0.4;
             ctx.beginPath(); ctx.arc(cx, cy, dotR, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
-
         });
         gatlingBullets = remaining;
+    }
+
+    // Pre-rendered warm glow sprite used by bullet ground-glow (recreated on DPR change)
+    let bulletGlowSprite = null, bulletGlowDpr = 0;
+    function getBulletGlowSprite() {
+        if (!bulletGlowSprite || bulletGlowDpr !== dpr) {
+            const S = 64, off = document.createElement('canvas');
+            off.width = off.height = Math.round(S * dpr);
+            const o = off.getContext('2d');
+            o.setTransform(dpr, 0, 0, dpr, 0, 0);
+            const g = o.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+            g.addColorStop(0,   'rgba(255,220,100,1)');
+            g.addColorStop(0.4, 'rgba(255,140,20,0.55)');
+            g.addColorStop(1,   'rgba(255,60,0,0)');
+            o.fillStyle = g;
+            o.beginPath(); o.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); o.fill();
+            bulletGlowSprite = off; bulletGlowDpr = dpr;
+        }
+        return bulletGlowSprite;
     }
 
     function renderShellCasings() {
@@ -1386,12 +1625,12 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Shotgun Turrets ---
-    function renderFlameTurrets() {
+    function renderShotgunTurrets() {
         const slots = getShotgunSlotPositions();
         const now   = Date.now();
-        flameTurrets = flameTurrets.filter(t => t.hp > 0);
+        shotgunTurrets = shotgunTurrets.filter(t => t.hp > 0);
 
-        flameTurrets.forEach(t => {
+        shotgunTurrets.forEach(t => {
             // Lag follow with wobble
             if (t.slotIdx !== undefined) {
                 t.wobblePhase += t.wobbleFreq;
@@ -1499,99 +1738,111 @@ window.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // --- Static dome cache (hex grid + fresnel + speculars, re-rendered on resize/theme) ---
+    let domeCache = null;
+    const DOME_R = 56;
+
+    function invalidateDomeCache() { domeCache = null; }
+
+    function drawDomeStatic() {
+        // Build (or rebuild) the offscreen dome sprite at device resolution
+        if (!domeCache || domeCache.w !== canvasWidth * dpr || domeCache.h !== canvasHeight * dpr) {
+            const off = document.createElement('canvas');
+            off.width  = Math.max(1, Math.round(canvasWidth  * dpr));
+            off.height = Math.max(1, Math.round(canvasHeight * dpr));
+            const octx = off.getContext('2d');
+            octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            const R = DOME_R, cx = centerX, cy = centerY;
+
+            // Layer 1: Fresnel fill
+            const fresnel = octx.createRadialGradient(cx, cy, 0, cx, cy, R);
+            fresnel.addColorStop(0,    'rgba(180,230,255,0.00)');
+            fresnel.addColorStop(0.60, 'rgba(120,190,255,0.04)');
+            fresnel.addColorStop(0.85, 'rgba(100,170,240,0.12)');
+            fresnel.addColorStop(1,    'rgba(80,150,230,0.26)');
+            octx.beginPath();
+            octx.arc(cx, cy, R, 0, Math.PI * 2);
+            octx.fillStyle = fresnel;
+            octx.fill();
+
+            // Layer 2: hex grid + lighting, clipped to dome
+            octx.save();
+            octx.beginPath();
+            octx.arc(cx, cy, R, 0, Math.PI * 2);
+            octx.clip();
+
+            const hexR = 12, hexH = Math.sqrt(3) * hexR, colW = hexR * 1.5;
+            octx.beginPath();
+            for (let col = -8; col <= 8; col++) {
+                for (let row = -8; row <= 8; row++) {
+                    const dx   = col * colW;
+                    const dy   = row * hexH + (Math.abs(col) % 2 === 1 ? hexH / 2 : 0);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > R + hexR) continue;
+                    const normDist = Math.min(dist / R, 0.99);
+                    const theta    = Math.asin(normDist);
+                    const cosT     = Math.max(0.18, Math.cos(theta));
+                    const phi      = dist > 0.5 ? Math.atan2(dy, dx) : 0;
+                    const cosPhi   = Math.cos(phi), sinPhi = Math.sin(phi);
+                    const hx = cx + dx, hy = cy + dy;
+                    for (let v = 0; v < 6; v++) {
+                        const a  = (Math.PI / 3) * v;
+                        const vx = hexR * Math.cos(a), vy = hexR * Math.sin(a);
+                        const rad = vx * cosPhi + vy * sinPhi;
+                        const tan = -vx * sinPhi + vy * cosPhi;
+                        const px  = hx + rad * cosT * cosPhi - tan * sinPhi;
+                        const py  = hy + rad * cosT * sinPhi + tan * cosPhi;
+                        v === 0 ? octx.moveTo(px, py) : octx.lineTo(px, py);
+                    }
+                    octx.closePath();
+                }
+            }
+            octx.strokeStyle = 'rgba(150,210,255,0.18)';
+            octx.lineWidth   = 0.7;
+            octx.stroke();
+
+            const bottomShadow = octx.createLinearGradient(cx, cy - R * 0.1, cx, cy + R);
+            bottomShadow.addColorStop(0, 'rgba(0,10,30,0)');
+            bottomShadow.addColorStop(1, 'rgba(0,15,45,0.35)');
+            octx.fillStyle = bottomShadow;
+            octx.fillRect(cx - R, cy - R * 0.1, R * 2, R * 1.1);
+
+            const spec1 = octx.createRadialGradient(cx - 16, cy - 20, 0, cx - 16, cy - 20, 62);
+            spec1.addColorStop(0,   'rgba(255,255,255,0.30)');
+            spec1.addColorStop(0.5, 'rgba(255,255,255,0.07)');
+            spec1.addColorStop(1,   'rgba(255,255,255,0)');
+            octx.fillStyle = spec1;
+            octx.fillRect(cx - R, cy - R, R * 2, R * 2);
+
+            const spec2 = octx.createRadialGradient(cx - 30, cy - 36, 0, cx - 30, cy - 36, 15);
+            spec2.addColorStop(0,   'rgba(255,255,255,0.80)');
+            spec2.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+            spec2.addColorStop(1,   'rgba(255,255,255,0)');
+            octx.fillStyle = spec2;
+            octx.fillRect(cx - R, cy - R, R * 2, R * 2);
+            octx.restore();
+
+            // Layer 3: rim
+            octx.beginPath();
+            octx.arc(cx, cy, R, 0, Math.PI * 2);
+            octx.strokeStyle = 'rgba(160,220,255,0.32)';
+            octx.shadowColor  = 'rgba(120,200,255,0.40)';
+            octx.shadowBlur   = 8;
+            octx.lineWidth    = 1;
+            octx.stroke();
+
+            domeCache = { canvas: off, w: off.width, h: off.height };
+        }
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(domeCache.canvas, 0, 0);
+        ctx.restore();
+    }
+
     // --- Turret Area (spawn boundary + slot placeholders) ---
     function renderTurretArea() {
-        const R = 56;
-
-        // --- Layer 1: Fresnel fill (transparent center, opaque rim like real glass) ---
-        ctx.save();
-        const fresnelGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, R);
-        fresnelGrad.addColorStop(0,    'rgba(180,230,255,0.00)');
-        fresnelGrad.addColorStop(0.60, 'rgba(120,190,255,0.04)');
-        fresnelGrad.addColorStop(0.85, 'rgba(100,170,240,0.12)');
-        fresnelGrad.addColorStop(1,    'rgba(80,150,230,0.26)');
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
-        ctx.fillStyle = fresnelGrad;
-        ctx.fill();
-        ctx.restore();
-
-        // --- Layer 2: Hex grid + lighting, clipped to dome ---
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
-        ctx.clip();
-
-        // Hex grid — dome-projected (hexes shrink toward edge, simulating curved surface)
-        const hexR = 12, hexH = Math.sqrt(3) * hexR, colW = hexR * 1.5;
-        ctx.beginPath();
-        for (let col = -8; col <= 8; col++) {
-            for (let row = -8; row <= 8; row++) {
-                const dx   = col * colW;
-                const dy   = row * hexH + (Math.abs(col) % 2 === 1 ? hexH / 2 : 0);
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > R + hexR) continue;
-                // Anisotropic dome projection: compress vertices in the RADIAL direction
-                // by cos(theta) (orthographic sphere view), leave tangential unchanged.
-                const normDist = Math.min(dist / R, 0.99);
-                const theta    = Math.asin(normDist);
-                const cosT     = Math.max(0.18, Math.cos(theta)); // min so edge hexes stay visible
-                const phi      = dist > 0.5 ? Math.atan2(dy, dx) : 0;
-                const cosPhi   = Math.cos(phi), sinPhi = Math.sin(phi);
-                const hx = centerX + dx, hy = centerY + dy;
-                for (let v = 0; v < 6; v++) {
-                    const a  = (Math.PI / 3) * v;
-                    const vx = hexR * Math.cos(a), vy = hexR * Math.sin(a);
-                    // Decompose vertex offset into radial + tangential components
-                    const rad = vx * cosPhi + vy * sinPhi;        // radial
-                    const tan = -vx * sinPhi + vy * cosPhi;       // tangential
-                    // Compress radial by cos(theta), tangential unchanged
-                    const px  = hx + rad * cosT * cosPhi - tan * sinPhi;
-                    const py  = hy + rad * cosT * sinPhi + tan * cosPhi;
-                    v === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-                }
-                ctx.closePath();
-            }
-        }
-        ctx.strokeStyle = 'rgba(150,210,255,0.18)';
-        ctx.lineWidth   = 0.7;
-        ctx.stroke();
-
-        // Bottom-half interior shadow (dome curves away from light source)
-        const bottomShadow = ctx.createLinearGradient(centerX, centerY - R * 0.1, centerX, centerY + R);
-        bottomShadow.addColorStop(0, 'rgba(0,10,30,0)');
-        bottomShadow.addColorStop(1, 'rgba(0,15,45,0.35)');
-        ctx.fillStyle = bottomShadow;
-        ctx.fillRect(centerX - R, centerY - R * 0.1, R * 2, R * 1.1);
-
-        // Broad soft specular (convex dome top-left highlight)
-        const spec1 = ctx.createRadialGradient(centerX - 16, centerY - 20, 0, centerX - 16, centerY - 20, 62);
-        spec1.addColorStop(0,   'rgba(255,255,255,0.30)');
-        spec1.addColorStop(0.5, 'rgba(255,255,255,0.07)');
-        spec1.addColorStop(1,   'rgba(255,255,255,0)');
-        ctx.fillStyle = spec1;
-        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
-
-        // Tight primary reflection dot
-        const spec2 = ctx.createRadialGradient(centerX - 30, centerY - 36, 0, centerX - 30, centerY - 36, 15);
-        spec2.addColorStop(0,   'rgba(255,255,255,0.80)');
-        spec2.addColorStop(0.5, 'rgba(255,255,255,0.22)');
-        spec2.addColorStop(1,   'rgba(255,255,255,0)');
-        ctx.fillStyle = spec2;
-        ctx.fillRect(centerX - R, centerY - R, R * 2, R * 2);
-
-        ctx.restore(); // end clip
-
-        // --- Layer 3: Subtle rim ---
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, R, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(160,220,255,0.32)';
-        ctx.shadowColor  = 'rgba(120,200,255,0.40)';
-        ctx.shadowBlur   = 8;
-        ctx.lineWidth    = 1;
-        ctx.stroke();
-        ctx.restore();
+        const R = DOME_R;
+        drawDomeStatic();
 
         // --- Hit flashes + ripple ---
         circleHitFlashes = circleHitFlashes.filter(f => f.life > 0);
@@ -1779,7 +2030,11 @@ window.addEventListener('DOMContentLoaded', function() {
     function renderMiniTurrets() {
         const now = Date.now();
         miniTurrets = miniTurrets.filter(t => t.hp > 0);
-        if (miniturretCountEl) miniturretCountEl.textContent = miniTurrets.length + flameTurrets.length;
+        const turretTotal = miniTurrets.length + shotgunTurrets.length;
+        if (miniturretCountEl && turretTotal !== lastTurretCount) {
+            miniturretCountEl.textContent = turretTotal;
+            lastTurretCount = turretTotal;
+        }
 
         miniTurrets.forEach(t => {
             // Lag follow: lerp toward target with per-turret speed + gentle wobble
@@ -1919,8 +2174,7 @@ function spawnExplosion(x, y) {
 
     // --- Starfield ---
     function renderStars() {
-        const isLight = document.body.getAttribute('data-theme') === 'light';
-        const baseColor = isLight ? '#1e2030' : '#ffffff';
+        const baseColor = isLightTheme ? '#1e2030' : '#ffffff';
         ctx.save();
 
         // Nebula / dust clouds behind stars
@@ -1960,7 +2214,7 @@ function spawnExplosion(x, y) {
 
             s.twinkle += s.twinkleSpeed;
             const tw = 0.85 + 0.15 * Math.sin(s.twinkle);
-            ctx.globalAlpha = s.alpha * tw * (isLight ? 0.28 : 0.9);
+            ctx.globalAlpha = s.alpha * tw * (isLightTheme ? 0.28 : 0.9);
             ctx.fillStyle = baseColor;
             ctx.beginPath();
             ctx.arc(sx, sy, s.size * s.z, 0, Math.PI * 2);
@@ -1971,11 +2225,10 @@ function spawnExplosion(x, y) {
     }
 
     function renderGrid() {
-        const isLight = document.body.getAttribute('data-theme') === 'light';
         const gridSize = 180;
-        const baseAlpha = isLight ? 0.09 : 0.14;
-        const col = isLight ? `rgba(30,32,48,${baseAlpha})` : `rgba(80,110,140,${baseAlpha})`;
-        const majorCol = isLight ? `rgba(30,32,48,${baseAlpha * 2.2})` : `rgba(100,140,175,${baseAlpha * 2.2})`;
+        const baseAlpha = isLightTheme ? 0.09 : 0.14;
+        const col      = isLightTheme ? `rgba(30,32,48,${baseAlpha})` : `rgba(80,110,140,${baseAlpha})`;
+        const majorCol = isLightTheme ? `rgba(30,32,48,${baseAlpha * 2.2})` : `rgba(100,140,175,${baseAlpha * 2.2})`;
 
         ctx.save();
         ctx.lineWidth = 1;
@@ -2016,7 +2269,7 @@ function spawnExplosion(x, y) {
         const color = isKill ? '#ffcc00' : '#ffffff';
         damageNumbers.push({
             x, y,
-            text: isKill ? `-${amount}` : `-${amount}`,
+            text: isKill ? `+${amount}` : `-${amount}`,
             life: 40,
             maxLife: 40,
             vy: -0.8 - Math.random() * 0.6,
@@ -2068,27 +2321,18 @@ function spawnExplosion(x, y) {
         radioChatter.style.display = 'block';
         radioChatter.classList.remove('fadeout');
         radioSpeaker.textContent = speaker;
-        radioText.textContent = '';
-        radioText.classList.remove('done');
         radioState.current = { speaker, text };
-        if (radioState.typeTimer) { clearInterval(radioState.typeTimer); radioState.typeTimer = null; }
-        let i = 0;
-        radioState.typeTimer = setInterval(() => {
-            if (i >= text.length) {
-                clearInterval(radioState.typeTimer);
-                radioState.typeTimer = null;
-                radioText.classList.add('done');
-                return;
-            }
-            radioText.textContent += text[i];
-            i++;
-        }, 20);
+        startTypewriter(radioState, text, radioText, 20);
         radioState.lastTime = Date.now();
+        untrackWallClock(radioState.clockRec);
+        radioState.clockRec = trackWallClock(
+            () => radioState.lastTime + RADIO_COOLDOWN - Date.now(),
+            ms => { radioState.lastTime = Date.now() - (RADIO_COOLDOWN - ms); }
+        );
     }
 
     function updateRadio() {
-        if (!radioChatter) return;
-        // Process queue
+        if (!radioChatter || paused) return;
         const now = Date.now();
         if (radioQueue.length > 0 && !radioState.current) {
             const item = radioQueue.shift();
@@ -2102,8 +2346,9 @@ function spawnExplosion(x, y) {
         }
         // Auto-dismiss after cooldown
         if (radioState.current && now - radioState.lastTime > RADIO_COOLDOWN) {
+            untrackWallClock(radioState.clockRec);
             radioChatter.classList.add('fadeout');
-            setTimeout(() => {
+            makePauseTimeout(() => {
                 if (radioChatter.classList.contains('fadeout')) {
                     radioChatter.style.display = 'none';
                     radioChatter.classList.remove('fadeout');
@@ -2143,6 +2388,25 @@ function spawnExplosion(x, y) {
             ctx.fillText(dn.text, dn.x, dn.y);
         });
         ctx.restore();
+    }
+
+    function spawnBossDeath(x, y, maxHp) {
+        const count = Math.min(80, Math.round(maxHp / 6));
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 2 + Math.random() * 8;
+            particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 2 + Math.random() * 4,
+                alpha: 1,
+                color: ['#ff44aa', '#00eeff', '#ffffff', '#1bffc1'][Math.floor(Math.random() * 4)],
+                decay: 0.012 + Math.random() * 0.012,
+                gravity: 0.04,
+            });
+        }
+        shakeCanvas(14);
     }
 
     function spawnImpactSparks(x, y, baseColor) {
@@ -2212,18 +2476,19 @@ function spawnExplosion(x, y) {
             state.streak++;
             state.streakFrames = 90;
             // Hit-stop / slow-mo scales with streak and enemy threat
-            const threat = e.behavior === 'tank' ? 2 : e.maxHp >= 4 ? 1.2 : 1;
-            hitStop = Math.min(8, Math.floor(2 + state.streak * 0.35 * threat));
-            if (state.streak >= 3) {
+            const threat = e.behavior === 'boss' ? 3 : e.behavior === 'tank' ? 2 : e.maxHp >= 4 ? 1.2 : 1;
+            hitStop = hitStopEnabled ? Math.min(8, Math.floor(2 + state.streak * 0.35 * threat)) : 0;
+            if (hitStopEnabled && state.streak >= 3) {
                 timeScale = 0.55;
-            } else {
+            } else if (hitStopEnabled) {
                 timeScale = Math.max(0.75, 1 - state.streak * 0.05);
             }
             const multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
             addScore(Math.round(e.maxHp * 100 * multiplier));
-            state.credits += 8 + (e.maxHp - 3) * 5; // 8 / 13 / 23+ per kill
+            state.credits += e.behavior === 'boss' ? BOSS_KILL_CREDITS : 8 + (e.maxHp - 3) * 5;
             playEnemyDeathSound(e);
             spawnExplosion(e.x, e.y);
+            if (e.behavior === 'boss') { state.bossActive = false; spawnBossDeath(e.x, e.y, e.maxHp); }
             spawnDamageNumber(e.x, e.y, Math.round(damage), true);
             if (state.kills === 1) maybeRadio('firstKill');
             if (state.streak === 3) maybeRadio('streak3');
@@ -2294,7 +2559,6 @@ function spawnExplosion(x, y) {
         if (state.heat >= 100) {
             state.jammed = true;
             state.jamFrames = state.jamDuration;
-            state.jamWindowAngle = Math.PI;
             maybeRadio('overheat');
         }
 
@@ -2355,7 +2619,7 @@ function spawnExplosion(x, y) {
     function hitDetect() {
         if (state.invincFrames > 0) { state.invincFrames--; return; }
         enemies = enemies.filter(e => {
-            if (Math.hypot(e.x - playerX, e.y - playerY) < 72) {
+            if (Math.hypot(e.x - playerX, e.y - playerY) < HIT_RADIUS) {
                 takeHealth();
                 playBoundaryHitSound();
                 const hitAngle = Math.atan2(e.y - playerY, e.x - playerX);
@@ -2370,7 +2634,7 @@ function spawnExplosion(x, y) {
 
         // Enemy bullet hits
         enemyBullets = enemyBullets.filter(b => {
-            if (Math.hypot(b.x - playerX, b.y - playerY) < 72) {
+            if (Math.hypot(b.x - playerX, b.y - playerY) < HIT_RADIUS) {
                 takeHealth();
                 playBoundaryHitSound();
                 const hitAngle = Math.atan2(b.y - playerY, b.x - playerX);
@@ -2393,7 +2657,7 @@ function spawnExplosion(x, y) {
         if (state.health <= 30) maybeRadio('lowHealth');
         // Splash: all deployed turrets take 3 damage
         let turretDied = false;
-        [...miniTurrets, ...flameTurrets].forEach(t => {
+        [...miniTurrets, ...shotgunTurrets].forEach(t => {
             if (t.hp > 0 && t.hp - 3 <= 0) turretDied = true;
             t.hp = Math.max(0, t.hp - 3);
         });
@@ -2465,28 +2729,13 @@ function spawnExplosion(x, y) {
         const beat = STORY_BEATS[cutsceneState.beatIdx];
         const panel = beat.panels[cutsceneState.panelIdx];
         cutsceneSpeaker.textContent = panel.speaker;
-        cutsceneText.textContent = '';
-        cutsceneText.classList.remove('done');
         cutsceneProgress.textContent = `${cutsceneState.panelIdx + 1} / ${beat.panels.length}`;
         cutsceneBtn.textContent = 'SKIP';
 
-        // Typewriter effect
-        if (cutsceneState.typeTimer) clearInterval(cutsceneState.typeTimer);
-        cutsceneState.typing = true;
-        let charIdx = 0;
-        cutsceneState.typeTimer = setInterval(() => {
-            if (charIdx >= panel.text.length) {
-                clearInterval(cutsceneState.typeTimer);
-                cutsceneState.typeTimer = null;
-                cutsceneState.typing = false;
-                cutsceneText.classList.add('done');
-                const isLast = cutsceneState.panelIdx >= beat.panels.length - 1;
-                cutsceneBtn.textContent = isLast ? 'CONTINUE \u25B6' : 'NEXT \u25B6';
-                return;
-            }
-            cutsceneText.textContent += panel.text[charIdx];
-            charIdx++;
-        }, 28);
+        startTypewriter(cutsceneState, panel.text, cutsceneText, 28, () => {
+            const isLast = cutsceneState.panelIdx >= beat.panels.length - 1;
+            cutsceneBtn.textContent = isLast ? 'CONTINUE \u25B6' : 'NEXT \u25B6';
+        });
     }
 
     function advanceCutscene() {
@@ -2495,13 +2744,10 @@ function spawnExplosion(x, y) {
 
         // If still typing, skip to full text
         if (cutsceneState.typing) {
-            clearInterval(cutsceneState.typeTimer);
-            cutsceneState.typeTimer = null;
-            cutsceneState.typing = false;
-            cutsceneText.textContent = beat.panels[cutsceneState.panelIdx].text;
-            cutsceneText.classList.add('done');
-            const isLast = cutsceneState.panelIdx >= beat.panels.length - 1;
-            cutsceneBtn.textContent = isLast ? 'CONTINUE \u25B6' : 'NEXT \u25B6';
+            skipTypewriter(cutsceneState, beat.panels[cutsceneState.panelIdx].text, cutsceneText, () => {
+                const isLast = cutsceneState.panelIdx >= beat.panels.length - 1;
+                cutsceneBtn.textContent = isLast ? 'CONTINUE \u25B6' : 'NEXT \u25B6';
+            });
             return;
         }
 
@@ -2542,39 +2788,22 @@ function spawnExplosion(x, y) {
         const panel = INTRO_PANELS[introState.panelIdx];
         introLabel.textContent = panel.label;
         introSpeaker.textContent = panel.speaker;
-        introText.textContent = '';
-        introText.classList.remove('done');
         introProgress.textContent = `${introState.panelIdx + 1} / ${INTRO_PANELS.length}`;
         introBtn.textContent = 'SKIP';
         playUiSound('advance');
 
-        if (introState.typeTimer) clearInterval(introState.typeTimer);
-        introState.typing = true;
-        let charIdx = 0;
-        introState.typeTimer = setInterval(() => {
-            if (charIdx >= panel.text.length) {
-                clearInterval(introState.typeTimer);
-                introState.typeTimer = null;
-                introState.typing = false;
-                introText.classList.add('done');
-                const isLast = introState.panelIdx >= INTRO_PANELS.length - 1;
-                introBtn.textContent = isLast ? 'DEPLOY \u25B6' : 'NEXT \u25B6';
-                return;
-            }
-            introText.textContent += panel.text[charIdx];
-            charIdx++;
-        }, 28);
+        startTypewriter(introState, panel.text, introText, 28, () => {
+            const isLast = introState.panelIdx >= INTRO_PANELS.length - 1;
+            introBtn.textContent = isLast ? 'DEPLOY \u25B6' : 'NEXT \u25B6';
+        });
     }
 
     function advanceIntro() {
         if (introState.typing) {
-            clearInterval(introState.typeTimer);
-            introState.typeTimer = null;
-            introState.typing = false;
-            introText.textContent = INTRO_PANELS[introState.panelIdx].text;
-            introText.classList.add('done');
-            const isLast = introState.panelIdx >= INTRO_PANELS.length - 1;
-            introBtn.textContent = isLast ? 'DEPLOY \u25B6' : 'NEXT \u25B6';
+            skipTypewriter(introState, INTRO_PANELS[introState.panelIdx].text, introText, () => {
+                const isLast = introState.panelIdx >= INTRO_PANELS.length - 1;
+                introBtn.textContent = isLast ? 'DEPLOY \u25B6' : 'NEXT \u25B6';
+            });
             return;
         }
 
@@ -2587,7 +2816,7 @@ function spawnExplosion(x, y) {
     }
 
     function finishIntro() {
-        if (introState.typeTimer) { clearInterval(introState.typeTimer); introState.typeTimer = null; }
+        if (introState.typeTimer) { clearPauseInterval(introState.typeTimer); introState.typeTimer = null; }
         introCutscene.classList.add('fadeout');
         setTimeout(() => {
             introCutscene.style.display = 'none';
@@ -2607,9 +2836,12 @@ function spawnExplosion(x, y) {
         state.level++;
         state.levelKills = 0;
         levelDisplay.textContent = state.level;
+        lastProgressText = ''; // force chip refresh for new killsToNext
         updateDroneIntensity();
         maybeRadio('levelUp');
         if (state.level > 1 && state.level % 3 === 0) triggerLevelForeshadow();
+        // The Blockmaster arrives at level 30, then every 5 levels
+        if (state.level >= 30 && (state.level - 30) % 5 === 0) spawnBoss();
         startExtraction(() => {
             if (isStoryLevel(state.level)) {
                 const beat = getStoryBeat(state.level);
@@ -2635,15 +2867,18 @@ function spawnExplosion(x, y) {
     }
 
     const TURRET_UPGRADES = [
-        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 182, costStep: 121, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); flameTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
-        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 154, costStep: 94,  desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); flameTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
-        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 138, costStep: 88,  desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...flameTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
+        { key: 'tdmg',  name: 'TURRET DMG',       baseCost: 182, costStep: 121, desc: 'All turrets deal +50% damage.',                       apply: () => { miniTurrets.forEach(t => { t.damage = +(t.damage * 1.5).toFixed(2); }); shotgunTurrets.forEach(t => { t.damage = +((t.damage || SHOTGUN_DAMAGE) * 1.5).toFixed(2); }); } },
+        { key: 'trate', name: 'TURRET FIRE RATE',  baseCost: 154, costStep: 94,  desc: 'All turrets fire 30% faster.',                        apply: () => { miniTurrets.forEach(t => { t.fireCooldown = Math.max(300, Math.round(t.fireCooldown * 0.70)); }); shotgunTurrets.forEach(t => { t.fireCooldown = Math.max(700, Math.round((t.fireCooldown || SHOTGUN_COOLDOWN) * 0.70)); }); } },
+        { key: 'thp',   name: 'TURRET ARMOR',      baseCost: 138, costStep: 88,  desc: 'All turrets gain +20 max HP and are fully repaired.',  apply: () => { [...miniTurrets, ...shotgunTurrets].forEach(t => { t.maxHp += 20; t.hp = t.maxHp; }); } },
     ];
 
     function getUpgradeCost(u) {
         const count = state.upgradeCounts[u.key] || 0;
         return u.baseCost + count * u.costStep;
     }
+
+    // --- Shop (persistent cards — built once per shop open, refreshed in place) ---
+    let shopRefs = null;
 
     function makeUpgradeCard(u, applyFn) {
         const card = document.createElement('div');
@@ -2679,14 +2914,13 @@ function spawnExplosion(x, y) {
             state.upgradeCounts[u.key] = (state.upgradeCounts[u.key] || 0) + 1;
             playUiSound('buy');
             applyFn();
-            populateUpgrades(); // re-render with updated credits + costs
+            refreshShop(); // update in place
         };
 
         actionEl.appendChild(btn);
         card.appendChild(nameEl); card.appendChild(descEl);
         card.appendChild(costEl); card.appendChild(actionEl);
-        refresh();
-        return card;
+        return { el: card, refresh };
     }
 
     function makeTurretPurchaseCard(key, name, desc, baseCost, costStep, getCount, getMax, deployFn) {
@@ -2730,7 +2964,7 @@ function spawnExplosion(x, y) {
             state.upgradeCounts[key] = (state.upgradeCounts[key] || 0) + 1;
             playUiSound('buy');
             deployFn();
-            populateUpgrades();
+            refreshShop();
         };
 
         actionEl.appendChild(btn);
@@ -2738,33 +2972,43 @@ function spawnExplosion(x, y) {
         card.appendChild(descEl);
         card.appendChild(costEl);
         card.appendChild(actionEl);
-        refresh();
-        return card;
+        return { el: card, refresh, turret: true };
     }
 
     function populateUpgrades() {
-        weaponShop.innerHTML = '';
+        const anyTurrets = miniTurrets.length > 0 || shotgunTurrets.length > 0;
+        const hadTurretSection = shopRefs && shopRefs.turretUpgradeSections.length > 0;
+        // Rebuild DOM only when the turret-upgrades section needs to appear/disappear
+        if (!shopRefs || anyTurrets !== hadTurretSection) {
+            shopRefs = buildShopDom(anyTurrets);
+        }
+        refreshShop();
+    }
 
-        // Credits header
+    function buildShopDom(anyTurrets) {
+        weaponShop.innerHTML = '';
+        const refs = { refreshers: [], turretUpgradeSections: [] };
+
         const header = document.createElement('p');
         header.className = 'shop-credits-line';
         header.style.cssText = 'grid-column:1/-1; margin-bottom:12px;';
         header.innerHTML = `CREDITS: <span style="color:#1bffc1; font-size:1.1em;">${state.credits}</span>`;
         weaponShop.appendChild(header);
+        refs.creditsEl = header;
 
-        // Player upgrades
         UPGRADES.forEach(u => {
-            weaponShop.appendChild(makeUpgradeCard(u, () => u.apply(state)));
+            const c = makeUpgradeCard(u, () => u.apply(state));
+            weaponShop.appendChild(c.el);
+            refs.refreshers.push(c.refresh);
         });
 
-        // Turret purchase section
         const turretSep = document.createElement('p');
         turretSep.className = 'shop-credits-line';
         turretSep.style.cssText = 'margin-top:20px; grid-column:1/-1; width:100%; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;';
         turretSep.textContent = 'DEPLOY TURRETS';
         weaponShop.appendChild(turretSep);
 
-        weaponShop.appendChild(makeTurretPurchaseCard(
+        const gatling = makeTurretPurchaseCard(
             'buy_gatling', 'GATLING TURRET',
             'Deploys a Gatling turret at a diagonal slot. Fast-firing, accurate.',
             250, 150,
@@ -2786,19 +3030,21 @@ function spawnExplosion(x, y) {
                 });
                 maybeRadio('firstTurret');
             }
-        ));
+        );
+        weaponShop.appendChild(gatling.el);
+        refs.refreshers.push(gatling.refresh);
 
-        weaponShop.appendChild(makeTurretPurchaseCard(
+        const shotgun = makeTurretPurchaseCard(
             'buy_shotgun', 'SHOTGUN TURRET',
             'Deploys a Shotgun turret at a cardinal slot. 7-pellet burst, wide arc.',
             350, 200,
-            () => flameTurrets.length,
+            () => shotgunTurrets.length,
             () => SHOTGUN_TURRET_MAX,
             () => {
                 const slotIdx = getNextShotgunSlot();
                 if (slotIdx === -1) return;
                 const slot = getShotgunSlotPositions()[slotIdx];
-                flameTurrets.push({
+                shotgunTurrets.push({
                     x: slot.x, y: slot.y, slotIdx,
                     hp: MINI_TURRET_HP, maxHp: MINI_TURRET_HP,
                     damage: SHOTGUN_DAMAGE, lastAngle: 0, lastFired: 0,
@@ -2808,20 +3054,44 @@ function spawnExplosion(x, y) {
                     lerpSpeed: 0.05 + Math.random() * 0.035,
                 });
             }
-        ));
+        );
+        weaponShop.appendChild(shotgun.el);
+        refs.refreshers.push(shotgun.refresh);
 
-        // Turret upgrades — only if any turrets are deployed
-        const anyTurrets = miniTurrets.length > 0 || flameTurrets.length > 0;
         if (anyTurrets) {
             const sep = document.createElement('p');
             sep.className = 'shop-credits-line';
             sep.style.cssText = 'margin-top:20px; grid-column:1/-1; width:100%; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;';
             sep.textContent = 'TURRET UPGRADES';
             weaponShop.appendChild(sep);
+            refs.turretUpgradeSections.push(sep);
             TURRET_UPGRADES.forEach(u => {
-                weaponShop.appendChild(makeUpgradeCard(u, () => u.apply()));
+                const c = makeUpgradeCard(u, () => u.apply());
+                weaponShop.appendChild(c.el);
+                refs.refreshers.push(c.refresh);
             });
         }
+        return refs;
+    }
+
+    function refreshShop() {
+        if (!shopRefs) return;
+        shopRefs.creditsEl.innerHTML = `CREDITS: <span style="color:#1bffc1; font-size:1.1em;">${state.credits}</span>`;
+        shopRefs.refreshers.forEach(r => r());
+    }
+
+    // Cached vignette gradients — rebuilt only on resize
+    let vignetteGradCache = null;
+    function getVignetteGradient() {
+        if (!vignetteGradCache || vignetteGradCache.w !== canvasWidth || vignetteGradCache.h !== canvasHeight) {
+            const g = ctx.createRadialGradient(
+                centerX, centerY, Math.min(canvasWidth, canvasHeight) * 0.25,
+                centerX, centerY, Math.max(canvasWidth, canvasHeight) * 0.7);
+            g.addColorStop(0, 'rgba(255,0,0,0)');
+            g.addColorStop(1, 'rgba(255,0,0,0.45)');
+            vignetteGradCache = { grad: g, w: canvasWidth, h: canvasHeight };
+        }
+        return vignetteGradCache.grad;
     }
 
     // --- Game Loop ---
@@ -2853,85 +3123,29 @@ function spawnExplosion(x, y) {
         });
     }
 
-    function gameLoop() {
-        updatePlayerPosition();
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-        // Damage vignette — red radial gradient fading from edges
-        if (damageFlash > 0) {
-            const a = (damageFlash / 12) * 0.45;
-            const grad = ctx.createRadialGradient(centerX, centerY, Math.min(canvasWidth, canvasHeight) * 0.25, centerX, centerY, Math.max(canvasWidth, canvasHeight) * 0.7);
-            grad.addColorStop(0, 'rgba(255,0,0,0)');
-            grad.addColorStop(1, `rgba(255,0,0,${a})`);
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-            damageFlash--;
-        }
-
-        // Chromatic aberration on heavy impacts
-        if (chromaticSplit > 0) {
-            applyChromaticSplit();
-            chromaticSplit *= 0.88;
-            if (chromaticSplit < 0.3) chromaticSplit = 0;
-        }
-
-        renderTurretArea();
-
-        // Turret heat glow + overheat blink/shrink
-        const heatRatio = state.heat / 100;
-        const isJammed  = state.jammed;
-        // Blink: alternate visibility every 4 frames when jammed
-        const jamBlink  = isJammed && (Math.floor(Date.now() / 80) % 2 === 0);
-        // Scale: shrink down to 0.72 when jammed
-        let turretScale = isJammed ? 0.72 : (1 - heatRatio * 0.08);
-        ctx.save();
-        ctx.translate(centerX, centerY);
-        ctx.scale(turretScale, turretScale);
-        ctx.translate(-centerX, -centerY);
-        if (!jamBlink) {
-            if (heatRatio > 0.05) {
-                const glowRadius = 36 + heatRatio * 22;
-                const glowAlpha  = heatRatio * (isJammed ? 0.85 : 0.55);
-                const grad = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, glowRadius);
-                const r = Math.round(255);
-                const g = Math.round(isJammed ? 0 : 180 - heatRatio * 180);
-                grad.addColorStop(0, `rgba(${r},${g},0,${glowAlpha})`);
-                grad.addColorStop(1, 'rgba(255,0,0,0)');
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            playerTurret.render();
-        }
-        ctx.restore();
-        drawHeatMeter();
-
-        drawPlayerBarrel();
-        turretTarget(cursorPosX, cursorPosY);
-
-        // Camera transform — world objects rendered relative to player position
-        const camX = centerX - playerX, camY = centerY - playerY;
-
-        // Parallax starfield behind everything
+    // --- World render orchestration ---
+    function renderWorld() {
         renderStars();
-
         ctx.save();
-        ctx.translate(camX, camY);
+        ctx.translate(centerX - playerX, centerY - playerY);
         renderGrid();
         renderEnemies();
         renderDamageNumbers();
         renderGatlingBullets();
         renderMiniTurrets();
-        renderFlameTurrets();
+        renderShotgunTurrets();
         renderShellCasings();
         renderEnemyBullets();
         renderWaveRings();
         renderGatlingMuzzleFlash();
         renderParticles();
         ctx.restore();
-        // Touch overlays — screen space, drawn after world camera restore
+    }
+
+    function renderTouchOverlays() {
+        if (!leftTouch && !rightTouch) return;
         ctx.save();
+        ctx.globalAlpha = 0.5;
 
         // Left: movement joystick
         if (leftTouch) {
@@ -2940,7 +3154,6 @@ function spawnExplosion(x, y) {
             const clamp = Math.min(mag, JOYSTICK_RADIUS);
             const kx    = mag > 0 ? ox + (leftTouch.dx / mag) * clamp : ox;
             const ky    = mag > 0 ? oy + (leftTouch.dy / mag) * clamp : oy;
-            ctx.globalAlpha = 0.5;
             ctx.beginPath();
             ctx.arc(ox, oy, JOYSTICK_RADIUS, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,255,255,0.35)';
@@ -2962,7 +3175,6 @@ function spawnExplosion(x, y) {
             const ox  = rightTouch.originX, oy = rightTouch.originY;
             const fx  = ox + rightTouch.dx,  fy = oy + rightTouch.dy;
             const mag = Math.hypot(rightTouch.dx, rightTouch.dy);
-            ctx.globalAlpha = 0.5;
             // Origin crosshair
             ctx.strokeStyle = 'rgba(255,120,60,0.55)';
             ctx.lineWidth   = 1.5;
@@ -2972,7 +3184,6 @@ function spawnExplosion(x, y) {
             ctx.moveTo(ox - cs, oy); ctx.lineTo(ox + cs, oy);
             ctx.moveTo(ox, oy - cs); ctx.lineTo(ox, oy + cs);
             ctx.stroke();
-            // Line + tip dot once dragged past jitter threshold
             if (mag > AIM_DEAD) {
                 ctx.beginPath();
                 ctx.moveTo(ox, oy);
@@ -2989,13 +3200,69 @@ function spawnExplosion(x, y) {
                 ctx.stroke();
             }
         }
-
-        ctx.globalAlpha = 1;
         ctx.restore();
+    }
+
+    function gameLoop() {
+        updatePlayerPosition();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+        // Damage vignette — red radial gradient fading from edges
+        if (damageFlash > 0) {
+            const a = (damageFlash / 12); // 1 → 0 over 12 frames
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.fillStyle = getVignetteGradient();
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            ctx.restore();
+            damageFlash--;
+        }
+
+        // Chromatic aberration on heavy impacts
+        if (chromaticSplit > 0 && screenFxEnabled) {
+            applyChromaticSplit();
+            chromaticSplit *= 0.88;
+            if (chromaticSplit < 0.3) chromaticSplit = 0;
+        } else if (chromaticSplit > 0) {
+            chromaticSplit = 0; // skip silently when reduced motion
+        }
+
+        renderTurretArea();
+
+        // Turret heat glow + overheat blink/shrink
+        const heatRatio = state.heat / 100;
+        const isJammed  = state.jammed;
+        const jamBlink  = isJammed && (Math.floor(Date.now() / 80) % 2 === 0);
+        const turretScale = isJammed ? 0.72 : (1 - heatRatio * 0.08);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(turretScale, turretScale);
+        ctx.translate(-centerX, -centerY);
+        if (!jamBlink) {
+            if (heatRatio > 0.05) {
+                const glowRadius = 36 + heatRatio * 22;
+                const glow = getHeatGlowSprite();
+                ctx.save();
+                ctx.globalAlpha = heatRatio * (isJammed ? 0.85 : 0.55);
+                ctx.drawImage(glow, centerX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2);
+                ctx.restore();
+            }
+            playerTurret.render();
+        }
+        ctx.restore();
+        drawHeatMeter();
+
+        drawPlayerBarrel();
+        turretTarget(cursorPosX, cursorPosY);
+
+        renderWorld();
+        renderTouchOverlays();
 
         if (mouseIsDown) fireAction();
         hitDetect();
         checkLevelUp();
+        renderProgressChip();
 
         // Wave ready ping
         const waveNowReady = Date.now() - state.waveLastUsed >= WAVE_COOLDOWN;
@@ -3014,7 +3281,7 @@ function spawnExplosion(x, y) {
         // Kill streak display
         if (state.streakFrames > 0) {
             state.streakFrames--;
-            if (state.streak >= 3) {
+            if (state.streak >= 3 && streakDisplay.textContent !== `STREAK ×${state.streak}`) {
                 streakDisplay.textContent = `STREAK ×${state.streak}`;
                 streakDisplay.classList.add('visible');
             }
@@ -3023,7 +3290,6 @@ function spawnExplosion(x, y) {
             streakDisplay.classList.remove('visible');
         }
 
-        // Narrative radio chatter ticker
         updateRadio();
 
         // Mid-wave progress chatter
@@ -3051,6 +3317,36 @@ function spawnExplosion(x, y) {
         }
     }
 
+    // Progress-to-next-level chip — DOM write only on change
+    let lastProgressText = '';
+    function renderProgressChip() {
+        if (!progressKills) return;
+        const def = getLevelDef();
+        const text = `${state.levelKills}/${def.killsToNext}`;
+        if (text !== lastProgressText) {
+            progressKills.textContent = text;
+            lastProgressText = text;
+        }
+    }
+
+    // Pre-rendered heat glow sprite (orange-red radial falloff)
+    let heatGlowSprite = null, heatGlowDpr = 0;
+    function getHeatGlowSprite() {
+        if (!heatGlowSprite || heatGlowDpr !== dpr) {
+            const S = 64, off = document.createElement('canvas');
+            off.width = off.height = Math.round(S * dpr);
+            const o = off.getContext('2d');
+            o.setTransform(dpr, 0, 0, dpr, 0, 0);
+            const g = o.createRadialGradient(S / 2, S / 2, 10, S / 2, S / 2, S / 2);
+            g.addColorStop(0, 'rgba(255,160,0,1)');
+            g.addColorStop(1, 'rgba(255,0,0,0)');
+            o.fillStyle = g;
+            o.beginPath(); o.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); o.fill();
+            heatGlowSprite = off; heatGlowDpr = dpr;
+        }
+        return heatGlowSprite;
+    }
+
     // --- HUD ---
     function showGame() {
         bottomBar.style.display = 'flex';
@@ -3071,12 +3367,12 @@ function spawnExplosion(x, y) {
 
     // --- Deploy drop-in sequence ---
     function deployLoop() {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-        const camX = centerX - playerX, camY = centerY - playerY;
         renderStars();
         ctx.save();
-        ctx.translate(camX, camY);
+        ctx.translate(centerX - playerX, centerY - playerY);
         renderGrid();
         ctx.restore();
 
@@ -3125,24 +3421,13 @@ function spawnExplosion(x, y) {
 
     let deployTypeTimer = null;
     function typeDeployText(text) {
-        if (deployTypeTimer) { clearInterval(deployTypeTimer); deployTypeTimer = null; }
-        deployText.textContent = '';
-        deployText.classList.remove('done');
-        let i = 0;
-        deployTypeTimer = setInterval(() => {
-            if (i >= text.length) {
-                clearInterval(deployTypeTimer);
-                deployTypeTimer = null;
-                deployText.classList.add('done');
-                return;
-            }
-            deployText.textContent += text[i];
-            i++;
-        }, 22);
+        const deployState = { typeTimer: deployTypeTimer, typing: false };
+        startTypewriter(deployState, text, deployText, 22);
+        deployTypeTimer = deployState.typeTimer;
     }
 
     function finishDeploy() {
-        if (deployTypeTimer) { clearInterval(deployTypeTimer); deployTypeTimer = null; }
+        if (deployTypeTimer) { clearPauseInterval(deployTypeTimer); deployTypeTimer = null; }
         deployOverlay.classList.add('fadeout');
         setTimeout(() => {
             deployOverlay.style.display = 'none';
@@ -3198,8 +3483,8 @@ function spawnExplosion(x, y) {
         extractionLabel.textContent = 'HOLDING PATTERN';
         extractionSub.textContent = 'Extraction in progress...';
         playUiSound('advance');
-        if (extractionTimer) clearTimeout(extractionTimer);
-        extractionTimer = setTimeout(() => {
+        if (extractionTimer) clearPauseTimeout(extractionTimer);
+        extractionTimer = makePauseTimeout(() => {
             extractionLabel.textContent = 'EXTRACTION COMPLETE';
             extractionSub.textContent = 'Preparing upgrade bay...';
             extractionOverlay.classList.add('fadeout');
@@ -3225,47 +3510,35 @@ function spawnExplosion(x, y) {
     function deathLoop() {
         deathAnim.frames++;
         const p = Math.min(1, deathAnim.frames / 90);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-        // Slow-mo background
-        const camX = centerX - playerX, camY = centerY - playerY;
-        renderStars();
-        ctx.save();
-        ctx.translate(camX, camY);
-        renderGrid();
-        renderEnemies();
-        renderDamageNumbers();
-        renderGatlingBullets();
-        renderMiniTurrets();
-        renderFlameTurrets();
-        renderShellCasings();
-        renderEnemyBullets();
-        renderWaveRings();
-        renderParticles();
-        ctx.restore();
+        // Slow-mo background — same world state as gameplay
+        renderWorld();
 
         renderTurretArea();
         playerTurret.render();
         drawPlayerBarrel();
 
         // CRT glitch scanlines
-        ctx.save();
-        ctx.fillStyle = `rgba(0,0,0,${0.15 + Math.random() * 0.15})`;
-        for (let y = 0; y < canvasHeight; y += 4) {
-            if (Math.random() < 0.3) ctx.fillRect(0, y, canvasWidth, 2);
+        if (screenFxEnabled) {
+            ctx.save();
+            ctx.fillStyle = `rgba(0,0,0,${0.15 + Math.random() * 0.15})`;
+            for (let y = 0; y < canvasHeight; y += 4) {
+                if (Math.random() < 0.3) ctx.fillRect(0, y, canvasWidth, 2);
+            }
+            ctx.restore();
         }
-        ctx.restore();
 
         // Red vignette fade
-        const vig = ctx.createRadialGradient(centerX, centerY, Math.min(canvasWidth, canvasHeight) * 0.2,
-                                             centerX, centerY, Math.max(canvasWidth, canvasHeight) * 0.85);
-        vig.addColorStop(0, 'rgba(255,0,0,0)');
-        vig.addColorStop(1, `rgba(120,0,0,${p * 0.85})`);
-        ctx.fillStyle = vig;
+        ctx.save();
+        ctx.globalAlpha = p;
+        ctx.fillStyle = getDeathVignetteGradient();
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        ctx.restore();
 
         // Chromatic split intensifies
-        if (p > 0.4) {
+        if (p > 0.4 && screenFxEnabled) {
             chromaticSplit = 8 + (p - 0.4) * 20;
             applyChromaticSplit();
         }
@@ -3295,20 +3568,38 @@ function spawnExplosion(x, y) {
     function applyChromaticSplit() {
         if (chromaticSplit <= 0) return;
         const s = chromaticSplit;
-        // Cheap chromatic aberration: draw red and cyan channels offset horizontally
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
-        ctx.globalAlpha = 0.5;
-        ctx.filter = 'none';
-        // We can't easily re-render everything, so we draw a blurred red/cyan overlay
-        // using the existing canvas content. Simpler: just tint the whole screen red/cyan edges.
-        const grad = ctx.createLinearGradient(0, 0, canvasWidth, 0);
-        grad.addColorStop(0, `rgba(255,0,0,${Math.min(0.35, s * 0.03)})`);
-        grad.addColorStop(0.5, 'rgba(255,0,0,0)');
-        grad.addColorStop(1, `rgba(0,255,255,${Math.min(0.35, s * 0.03)})`);
+        const grad = getChromaticGradient();
+        ctx.globalAlpha = Math.min(1, s * 0.09); // gradient alphas bake at max 0.35
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         ctx.restore();
+    }
+
+    let chromaticGradCache = null;
+    function getChromaticGradient() {
+        if (!chromaticGradCache || chromaticGradCache.w !== canvasWidth) {
+            const g = ctx.createLinearGradient(0, 0, canvasWidth, 0);
+            g.addColorStop(0,   'rgba(255,0,0,0.35)');
+            g.addColorStop(0.5, 'rgba(255,0,0,0)');
+            g.addColorStop(1,   'rgba(0,255,255,0.35)');
+            chromaticGradCache = { grad: g, w: canvasWidth };
+        }
+        return chromaticGradCache.grad;
+    }
+
+    let deathVignetteGradCache = null;
+    function getDeathVignetteGradient() {
+        if (!deathVignetteGradCache || deathVignetteGradCache.w !== canvasWidth || deathVignetteGradCache.h !== canvasHeight) {
+            const g = ctx.createRadialGradient(
+                centerX, centerY, Math.min(canvasWidth, canvasHeight) * 0.2,
+                centerX, centerY, Math.max(canvasWidth, canvasHeight) * 0.85);
+            g.addColorStop(0, 'rgba(255,0,0,0)');
+            g.addColorStop(1, 'rgba(120,0,0,0.85)');
+            deathVignetteGradCache = { grad: g, w: canvasWidth, h: canvasHeight };
+        }
+        return deathVignetteGradCache.grad;
     }
 
     // --- Reset ---
@@ -3330,7 +3621,7 @@ function spawnExplosion(x, y) {
 
     function initNebula() {
         nebulaClouds = [];
-        const palette = document.body.getAttribute('data-theme') === 'light'
+        const palette = isLightTheme
             ? ['rgba(60,80,120,0.08)', 'rgba(80,120,160,0.06)', 'rgba(100,90,140,0.05)', 'rgba(50,70,100,0.07)']
             : ['rgba(40,60,120,0.14)', 'rgba(60,40,100,0.11)', 'rgba(20,80,120,0.12)', 'rgba(80,30,90,0.09)'];
         for (let i = 0; i < NEBULA_COUNT; i++) {
@@ -3372,7 +3663,7 @@ function spawnExplosion(x, y) {
             playerSpeed: PLAYER_SPEED,
             credits: 80,
             upgradeCounts: {},
-            jamWindowAngle: Math.PI,
+            bossActive: false,
             streak: 0,
             streakFrames: 0,
             lastVented: 0,
@@ -3381,20 +3672,24 @@ function spawnExplosion(x, y) {
         keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
         leftTouch = null; rightTouch = null; mouseIsDown = false;
         enemies = []; particles = []; gatlingBullets = []; shellCasings = [];
-        miniTurrets = []; flameTurrets = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
+        miniTurrets = []; shotgunTurrets = []; circleHitFlashes = []; waveRings = []; enemyBullets = [];
         damageNumbers = [];
         initStars();
         initNebula();
         radioState.shown.clear();
         radioState.current = null;
         radioQueue.length = 0;
+        untrackWallClock(radioState.clockRec);
+        radioState.clockRec = null;
         if (radioChatter) radioChatter.style.display = 'none';
         if (miniturretCountEl) miniturretCountEl.textContent = '0';
+        lastTurretCount = 0;
         scoreBoard.textContent = '0';
         livesText.textContent = '3';
-        weaponDisplay.textContent = 'GATLING';
         levelDisplay.textContent = '1';
         healthBar.style.width = '100%';
+        lastProgressText = '';
+        renderProgressChip();
         streakDisplay.classList.remove('visible');
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         paused = false;
@@ -3402,7 +3697,7 @@ function spawnExplosion(x, y) {
         hitStop = 0;
         pauseOverlay.style.display = 'none';
         cutscene.style.display = 'none';
-        if (cutsceneState.typeTimer) { clearInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
+        if (cutsceneState.typeTimer) { clearPauseInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
     }
 
     function clearAllIntervals() {
@@ -3443,9 +3738,9 @@ function spawnExplosion(x, y) {
         }
         if (moveBudget < 0) moveAcc = 0; // gave up — drop backlog
 
-        // Spawn — level-scaled interval
+        // Spawn — level-scaled interval (suppressed while a boss is alive)
         const spawnInterval = getSpawnInterval();
-        if (spawnAcc >= spawnInterval && !frozen) {
+        if (spawnAcc >= spawnInterval && !frozen && !state.bossActive) {
             spawnEnemy();
             spawnAcc -= spawnInterval;
             if (spawnAcc > spawnInterval * 3) spawnAcc = 0; // drop backlog
@@ -3481,11 +3776,13 @@ function spawnExplosion(x, y) {
             paused = false;
             pauseOverlay.style.display = 'none';
             lastTime = 0; // reset so dt doesn't jump after resume
+            resumeAllTimers();
             rafId = requestAnimationFrame(gameFrame);
         } else {
             // Pause — cancel rAF, keep state
             if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
             paused = true;
+            pauseAllTimers();
             pauseOverlay.style.display = 'flex';
         }
     }
@@ -3533,9 +3830,11 @@ function spawnExplosion(x, y) {
         if (theme === 'light') document.body.setAttribute('data-theme', 'light');
         else document.body.removeAttribute('data-theme');
         themeToggle.textContent = theme === 'light' ? '◑ DARK' : '◑ LIGHT';
-        localStorage.setItem('blockshooter_theme', theme);
+        isLightTheme = theme === 'light';
+        invalidateDomeCache();
+        storage.set('blockshooter_theme', theme);
     }
-    applyTheme(localStorage.getItem('blockshooter_theme') || 'dark');
+    applyTheme(storage.get('blockshooter_theme', 'dark'));
     themeToggle.addEventListener('click', () => {
         applyTheme(document.body.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
     });
@@ -3553,9 +3852,9 @@ function spawnExplosion(x, y) {
             muteToggle.classList.remove('muted');
             if (gameRunning && !paused) startDrone();
         }
-        localStorage.setItem('blockshooter_muted', muted ? '1' : '0');
+        storage.set('blockshooter_muted', muted ? '1' : '0');
     }
-    applyMute(localStorage.getItem('blockshooter_muted') === '1');
+    applyMute(storage.get('blockshooter_muted', '0') === '1');
     muteToggle.addEventListener('click', () => {
         applyMute(soundEnabled);
     });
@@ -3574,11 +3873,11 @@ function spawnExplosion(x, y) {
 
     // --- End States ---
     function getHighScore() {
-        return parseInt(localStorage.getItem('blockshooter_hs') || '0');
+        return parseInt(storage.get('blockshooter_hs', '0'), 10) || 0;
     }
     function saveHighScore(score) {
         const prev = getHighScore();
-        if (score > prev) { localStorage.setItem('blockshooter_hs', score); return true; }
+        if (score > prev) { storage.set('blockshooter_hs', String(score)); return true; }
         return false;
     }
 
@@ -3587,7 +3886,7 @@ function spawnExplosion(x, y) {
         stopDrone();
         pauseOverlay.style.display = 'none';
         cutscene.style.display = 'none';
-        if (cutsceneState.typeTimer) { clearInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
+        if (cutsceneState.typeTimer) { clearPauseInterval(cutsceneState.typeTimer); cutsceneState.typeTimer = null; }
         const isNew = saveHighScore(state.score);
         const hs    = getHighScore();
         document.querySelector('#lose-score').textContent     = `Score: ${state.score}  |  Level ${state.level}`;

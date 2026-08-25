@@ -18,34 +18,39 @@ Hosted on GitHub Pages: https://lrakoto.github.io/blockshooter/
 
 ## File Structure
 ```
-index.html   — Game layout, menus (start/win/lose), canvas, HUD, intro + deploy overlays
+index.html   — Game layout, menus (start/lose), canvas, HUD, intro + deploy overlays
 style.css    — All styling (responsive, uses vw/vh/%)
 script.js    — All game logic (single DOMContentLoaded listener)
-images/      — turret.webp, wireframe.png
-sounds/      — lasers.m4a (legacy; unused — all audio is Web Audio API synth)
-README.md    — Dev notes and code walkthrough
+images/      — cube.jpeg (menu art), wireframe.png (README header)
+README.md    — Dev diary from the original prototype (see note at top)
 ```
 
 ## Architecture (script.js)
 Everything lives inside one `DOMContentLoaded` listener. Key pieces:
 
-- **Enemy system**: `enemies[]` array of objects with `{ x, y, hp, maxHp, behavior, ... }`. Spawned by `spawnEnemy()` on an interval. Behaviors: `normal`, `zigzag` (pyramid), `zipper` (sphere), `tank` (shoots back). Removed via `Array.filter` when `hp <= 0`.
-- **Enemy movement**: `moveEnemies()` runs every 20ms. Uses `Math.atan2` to head toward `(playerX, playerY)` (camera-follows-player world). Speed via `state.perFrameDistance`, capped at `ENEMY_MAX_SPEED = 0.76`.
+- **Enemy system**: `enemies[]` array of objects with `{ x, y, hp, maxHp, behavior, ... }`. Spawned by `spawnEnemy()` on an accumulator (suppressed while a boss is alive). Behaviors: `normal`, `zigzag` (pyramid), `zipper` (sphere), `tank` (shoots back), and `boss` (the Blockmaster). Removed via bulk filter after `hitEnemy()` returns false.
+- **The Blockmaster (boss)**: appears at level 30 and every 5 levels after. Orbits the player at ~250px, telegraphs, then fires radial bullet bursts. Big HP pool scaled by cycle, drops 500 credits + scaled score on kill, and pauses regular spawns while alive.
+- **Enemy movement**: `moveEnemies()` runs every 20ms; `moveBoss()` handles the boss's two-phase logic (approach → strafe-orbit). Speed via `state.perFrameDistance`, capped at `ENEMY_MAX_SPEED = 0.76`.
 - **Player**: `Player` class instance (`playerTurret`) drawn at screen center `(centerX, centerY)`. World scrolls around player via `playerX`/`playerY`. WASD or left touch joystick to move.
-- **Shooting**: `mousedown`/touch fires `fireAction()` — ray-style bullets in `gatlingBullets[]` with `progress` interpolation. Hit detection via `rayHitsEnemy()` (point-to-segment distance). Tank enemies shoot back via `enemyBullets[]`.
-- **Background**: parallax `stars[]` and drifting `nebulaClouds[]` drawn behind a faint dynamic grid (`renderGrid()`); the old noisy `pattern-02.png` tile was removed.
-- **Game loop**: single `requestAnimationFrame` — `gameFrame()` drives fixed-timestep accumulators for move (20ms), logic/render (30ms), and spawn (level-scaled). `timeScale` slows the world briefly on big kills/multi-kills. A separate `deployFrame()` plays a short drop-in cinematic before the first level, and `deathFrame()` plays a cinematic death sequence.
-- **Difficulty scaling**: `LEVELS[]` table (8 entries) — `killsToNext`, `spawnInterval`, `toughChance`, `eliteChance`. Beyond level 8, `getLevelDef()` extrapolates: HP scales up, spawn interval shrinks, speed capped.
-- **Story / Cutscenes**: an opening prologue (`INTRO_PANELS[]`) plays before the main menu. Every 5 levels (5, 10, 15, 20, 25, 30), a comms-feed interstitial with typewriter text plays before the shop. `STORY_BEATS[]` array defines panels with speaker + text. Click SKIP to fast-forward typing, click NEXT/CONTINUE to advance panels. After the last panel, bonus credits are awarded and the shop opens. `isStoryLevel()` checks if a level triggers a cutscene.
-- **Radio chatter**: in-level comms messages (`RADIO_LINES[]`) are triggered by milestones — first kill, first turret, low health, overheat, wave blast, streaks, mid-wave progress, and first encounter with each enemy type. A mysterious "Blockmaster" signal also foreshadows every 3rd level.
-- **Cinematic transitions**: `showTitleCard()` announces each wave; `startExtraction()` runs a HOLDING PATTERN animation before the shop; `startDeathSequence()` adds a slow-motion CRT-glitch red fade before the lose screen; `applyChromaticSplit()` adds a brief RGB split on player damage.
-- **Lose condition**: `health <= 0 && lives === 0`. Player starts with 3 lives; each death resets health to 100 and grants 120 frames invincibility.
-- **Upgrades shop**: between levels, `populateUpgrades()` offers stat upgrades (UPGRADES[]), turret purchases (Gatling/Shotgun), and turret upgrades (TURRET_UPGRADES[]). Credits earned per kill + level completion bonus.
-- **Wave blast**: `triggerWave()` (E key) — radial push + non-lethal HP damage to enemies in range, 12s cooldown.
-- **Heat mechanic**: firing builds `state.heat`; at 100 the gun jams for `jamDuration` frames. `ventOverheat()` (R key) clears the jam if pressed during the VENT_ZONE window (0.38-0.62 of jam progress).
-- **Audio**: Web Audio API synth — `playExplosionSound`, `playGatlingSound`, `playBulletHitSound`, `playShotgunSound`, `playRailgunSound`, `playBoundaryHitSound`, `playWaveReadySound`, `playWaveBlastSound`, `playEnemyHurtSound`, `playEnemyDeathSound`, `playUiSound`. `audioCtx` lazily created on first user gesture. Spatial stereo panning based on world position, per-weapon pitch variation, dynamic ambient drone, and a mute toggle with `localStorage` persistence.
-- **Mobile**: dual-zone touch — left half = movement joystick, right half = trackpad-style aim. Portrait shows a rotate prompt.
-- **Theme**: dark (default) / light toggle, persisted in localStorage. High score persisted in localStorage.
+- **Shooting**: `mousedown`/touch fires `fireAction()` — ray-style bullets in `gatlingBullets[]` with `progress` interpolation. Hit detection via `rayHitsEnemy()` (point-to-segment). Tank + boss enemies shoot back via `enemyBullets[]` (capped at `ENEMY_BULLET_CAP = 200`).
+- **Background**: parallax `stars[]` and drifting `nebulaClouds[]` behind a faint grid (`renderGrid()`). Nebula/star colors use cached `isLightTheme` flag.
+- **Canvas**: scaled by `devicePixelRatio` (capped at 2) so it renders crisply on retina/HiDPI displays; each frame sets `ctx.setTransform(dpr,…)` before clearing. The energy-dome visual (`drawDomeStatic()`) is pre-rendered to an offscreen canvas and only re-rendered on resize/theme change.
+- **Render orchestration**: one `renderWorld()` drives all world-space draw calls; `renderTouchOverlays()` draws mobile joystick/trackpad. `gameLoop()`, `deployLoop()`, `deathLoop()` use these shared helpers.
+- **Game loop**: single `requestAnimationFrame` — `gameFrame()` drives fixed-timestep accumulators for move (20ms), logic/render (30ms), and spawn (level-scaled). `timeScale` slows the world briefly on kills (disabled under reduced-motion). `deployFrame()` / `deathFrame()` run the intro/outro cinematics.
+- **Typewriter / cinematics**: all text typing (`startTypewriter`) and cinematic timers run through pause-aware `makePauseInterval`/`makePauseTimeout` wrappers, so ESC pause actually freezes mid-cutscene typing and radio chatter.
+- **Difficulty scaling**: `LEVELS[]` table (8 entries) — beyond level 8, `getLevelDef()` extrapolates HP/spawn rate. HUD shows a `NEXT {kills}/{needed}` progress chip.
+- **Story / Cutscenes**: `STORY_BEATS[]` at levels 5/10/15/20/25/30 — the L30 beat is the narrative handoff into boss encounters. `isStoryLevel()` gates cutscenes; `getStoryBeat()` picks the right beat.
+- **Radio chatter**: `RADIO_LINES.command[]` + `RADIO_LINES.blockmaster[]`, plus `BOSS_RADIO_LINES[]` cycled per boss appearance. `trackWallClock()` freezes the auto-dismiss timer while paused.
+- **Cinematic transitions**: `showTitleCard()`, `startExtraction()`, `startDeathSequence()`, `applyChromaticSplit()` — all gated by `screenFxEnabled` under reduced-motion.
+- **Lose condition**: `health <= 0 && lives === 0`. 3 lives; each death grants 120 invincibility frames.
+- **Upgrades shop**: built once per shop open via `buildShopDom()`; purchases call `refreshShop()` to update in place (no DOM rebuild). Turret-upgrade section is rebuilt only when it needs to appear/disappear.
+- **Wave blast**: `triggerWave()` (E key) — radial push + non-lethal damage, 12s cooldown.
+- **Heat mechanic**: `state.heat`; at 100 jams for `jamDuration` frames. `ventOverheat()` (R key) during `VENT_ZONE_LO`–`HI` (0.38–0.62).
+- **Audio**: Web Audio API synth throughout (lazily created on first gesture). Spatial stereo panning per sound source, ambient drone scales with level, mute persisted via safe `storage` wrapper.
+- **Safe storage**: all `localStorage` access goes through a try/catch `storage` helper (private-browsing safe). High-score parse guards against NaN.
+- **Mobile**: dual-zone touch; pointer math uses viewport coords directly (canvas is `position:fixed` inset:0).
+- **Theme**: dark (default) / light toggle, persisted. `isLightTheme` is cached in JS; canvas `data-theme` drives CSS.
+- **Reduced motion**: `prefers-reduced-motion: reduce` gates screen shake, chromatic split, CRT glitch, hit-stop/slow-mo, and CSS animations (via `body.no-anim` class).
 
 ## Known Issues / Notes
 - Game loop uses a single `requestAnimationFrame` with fixed-timestep accumulators (move 20ms, logic 30ms, spawn level-scaled). Old triple-`setInterval` approach replaced.

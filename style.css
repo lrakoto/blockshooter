@@ -13,7 +13,7 @@ main {
     overflow: hidden;
 }
 
-#winmenu, #losemenu{
+#losemenu{
     display:none;
     position: absolute;
     inset: 0;
@@ -133,7 +133,6 @@ canvas, aside, .bord{
 #bottombar{
     display: none;
     position:absolute;
-    bottom:0px;
     width:90vw;
     left: 5vw;
     bottom:30px;
@@ -198,10 +197,6 @@ button{
     margin-bottom: 14px;
 }
 
-#shopcredits {
-    color: #1bffc1;
-}
-
 #weaponshop {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
@@ -250,20 +245,6 @@ button{
 .weapon-action button:disabled {
     opacity: 0.3;
     cursor: not-allowed;
-}
-
-.weapon-status {
-    color: #1bffc1;
-    font-size: 0.6em;
-    letter-spacing: 3px;
-    font-weight: 700;
-}
-
-.key-hint {
-    font-size: 0.6em;
-    opacity: 0.45;
-    letter-spacing: 2px;
-    margin-bottom: 14px;
 }
 
 /* HUD additions */
@@ -415,7 +396,6 @@ button{
 }
 [data-theme="light"] canvas {
     background: #d0d4de;
-    background-image: none;
 }
 [data-theme="light"] canvas, [data-theme="light"] aside, [data-theme="light"] .bord {
     border-color: rgba(0,0,0,0.12);
@@ -889,6 +869,17 @@ button{
     60%  { transform: rotate(90deg); }
     100% { transform: rotate(90deg); }
 }
+
+/* Reduced motion — disable all decorative animations/transitions */
+body.no-anim *, body.no-anim *::before, body.no-anim *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* Light-theme contrast fixes */
+[data-theme="light"] .ctrl-key { color: #0a6e50; }
+[data-theme="light"] #streak-display { color: #b8860b; }
+
 @media (orientation: portrait) and (max-width: 1024px) {
     #rotate-prompt { display: flex; }
 }
@@ -899,7 +890,7 @@ button{
 /* ─── Mobile / landscape phone layout ────────────────────────────────────── */
 @media (max-width: 1024px) and (orientation: landscape) {
     /* Menus */
-    #startmenu, #winmenu, #losemenu { padding: 4% 6%; }
+    #startmenu, #losemenu { padding: 4% 6%; }
     #levelmenu { padding: 3% 5%; }
     .innerwrap { padding: 4%; }
     .cubeimg { display: none; }
