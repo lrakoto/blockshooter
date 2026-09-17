@@ -604,8 +604,8 @@ window.addEventListener('DOMContentLoaded', function() {
     // Shown on the level-up screen (index = new level - 1)
     const LEVEL_DESCS = [
         '',
-        'Tougher blocks are joining the assault. Orange blocks take 2 hits.',
-        'Elite red blocks have appeared. They require 3 hits to destroy.',
+        'Tougher blocks are joining the assault — 4 HP instead of 3, and they spawn purple.',
+        'Elite blocks have appeared. 6 HP, double a standard block. Colour tracks the damage done: purple, then red, then teal.',
         'Forces are overwhelming. Upgrade your arsenal before re-deploying.',
         'Maximum threat. Reinforcements incoming.',
         'Command has lost contact. You\'re on your own, Cadet.',
