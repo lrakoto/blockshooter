@@ -924,3 +924,12 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after {
     #extraction-label { font-size: 0.7em; }
     #title-card-level { font-size: 2em; letter-spacing: 10px; }
 }
+
+/* Start-menu high score — hidden until a score exists */
+#start-highscore {
+    color: #1bffc1;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+}
+#start-highscore:empty { display: none; }
+[data-theme="light"] #start-highscore { color: #0a7d61; }

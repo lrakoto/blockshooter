@@ -41,6 +41,7 @@ window.addEventListener('DOMContentLoaded', function() {
     const scoreBoard     = document.querySelector('#score');
     const progressKills  = document.querySelector('#progresskills');
     const startButton    = document.querySelector('#startbutton');
+    const startHighScore = document.querySelector('#start-highscore');
     const livesText      = document.querySelector('#lives');
     const healthBar      = document.querySelector('#health');
     const levelDisplay   = document.querySelector('#levelnum');
@@ -584,7 +585,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     // --- Game Constants ---
 
-    // 5 levels — killsToNext: kills needed to advance, spawnInterval: ms between spawns
+    // 8 hand-tuned levels (extrapolated past that by getLevelDef) — killsToNext: kills needed to advance, spawnInterval: ms between spawns
     const LEVELS = [
         { killsToNext: 12, spawnInterval: 1100, toughChance: 0,     eliteChance: 0 },
         { killsToNext: 18, spawnInterval: 950,  toughChance: 0.35,  eliteChance: 0 },
@@ -1014,6 +1015,23 @@ window.addEventListener('DOMContentLoaded', function() {
         };
     }
 
+    // Extra HP every block gains past the hand-tuned levels (+1 per 3 levels)
+    function getBonusHp(level = state.level) {
+        return Math.max(0, Math.floor((level - LEVELS.length) / 3));
+    }
+
+    // Flavor text for extrapolated levels. Built from the live numbers so it
+    // cannot drift from the actual balance the way LEVEL_DESCS can.
+    function getExtrapolatedDesc(level) {
+        const def       = getLevelDef();
+        const bonus     = getBonusHp(level);
+        const prevBonus = getBonusHp(level - 1);
+        const parts = [`Deep territory. ${def.killsToNext} kills to clear, a new block every ${def.spawnInterval}ms.`];
+        if (bonus > prevBonus)  parts.push(`Blocks have hardened${prevBonus > 0 ? ' again' : ''} — every one carries +${bonus} HP.`);
+        else if (bonus > 0)     parts.push(`Every block carries +${bonus} HP.`);
+        return parts.join(' ');
+    }
+
     function getEnemyHp() {
         const def = getLevelDef();
         const r = Math.random();
@@ -1022,9 +1040,7 @@ window.addEventListener('DOMContentLoaded', function() {
         else if (r < def.eliteChance + def.toughChance) hp = 4;
         else                                          hp = 3;
         // Beyond base levels: enemies gain HP instead of speed
-        if (state.level > LEVELS.length) {
-            hp += Math.floor((state.level - LEVELS.length) / 3);
-        }
+        hp += getBonusHp();
         return hp;
     }
 
@@ -2781,6 +2797,7 @@ function spawnExplosion(x, y) {
         introCutscene.style.display = 'flex';
         introCutscene.classList.remove('fadeout');
         startMenu.style.display = 'block';
+        refreshStartHighScore();
         showIntroPanel();
     }
 
@@ -2855,7 +2872,9 @@ function spawnExplosion(x, y) {
     function showLevelUpScreen() {
         playUiSound('levelup');
         levelHeading.textContent = `LEVEL ${state.level}`;
-        levelDesc.textContent = LEVEL_DESCS[state.level - 1] || '';
+        levelDesc.textContent = state.level > LEVELS.length
+            ? getExtrapolatedDesc(state.level)
+            : (LEVEL_DESCS[state.level - 1] || '');
         populateUpgrades();
         levelMenu.style.display = 'block';
         pauseOverlay.style.display = 'none';
@@ -3808,6 +3827,7 @@ function spawnExplosion(x, y) {
     returnMenuLose.addEventListener('click', function() {
         loseMenu.style.display = 'none';
         startMenu.style.display = 'block';
+        refreshStartHighScore();
         hideGame(); defaults();
     });
 
@@ -3874,6 +3894,10 @@ function spawnExplosion(x, y) {
     // --- End States ---
     function getHighScore() {
         return parseInt(storage.get('blockshooter_hs', '0'), 10) || 0;
+    }
+    function refreshStartHighScore() {
+        const hs = getHighScore();
+        startHighScore.textContent = hs > 0 ? `High Score: ${hs}` : '';
     }
     function saveHighScore(score) {
         const prev = getHighScore();
