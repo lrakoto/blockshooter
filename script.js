@@ -553,6 +553,9 @@ window.addEventListener('DOMContentLoaded', function() {
         canvasHeight = window.innerHeight;
         gameCanvas.width  = Math.round(canvasWidth  * dpr);
         gameCanvas.height = Math.round(canvasHeight * dpr);
+        // Pin the CSS size, or the canvas lays out at its backing-store size (dpr× too big)
+        gameCanvas.style.width  = canvasWidth  + 'px';
+        gameCanvas.style.height = canvasHeight + 'px';
         centerX = canvasWidth  / 2;
         centerY = canvasHeight / 2;
     }
@@ -733,7 +736,7 @@ window.addEventListener('DOMContentLoaded', function() {
     function pauseAllTimers() {
         const now = Date.now();
         activeTimers.forEach(t => { t.paused = true; t.remaining -= now - t.lastStart; if (t.remaining < 0) t.remaining = 0; });
-        activeTimeouts.forEach(t => { t.paused = true; t.remaining -= now - t.lastStart; if (t.remaining < 0) t.remaining = 0; });
+        activeTimeouts.forEach(t => { clearTimeout(t.id); t.paused = true; t.remaining -= now - t.lastStart; if (t.remaining < 0) t.remaining = 0; });
         pauseWallClocks.forEach(r => { r.saved = r.getRemaining(); });
     }
     function resumeAllTimers() {
@@ -799,6 +802,7 @@ window.addEventListener('DOMContentLoaded', function() {
     let radioQueue        = [];
 
     let rafId = null;
+    let activeLoop = null; // frame fn that ESC-resume should restart (deploy or game)
     let lastTime = 0;
     let moveAcc = 0;
     let logicAcc = 0;
@@ -925,6 +929,13 @@ window.addEventListener('DOMContentLoaded', function() {
         if (k === 'a') keysHeld.a = false;
         if (k === 's') keysHeld.s = false;
         if (k === 'd') keysHeld.d = false;
+    });
+
+    // Losing focus swallows keyup/mouseup — drop held input and pause
+    window.addEventListener('blur', () => {
+        keysHeld.w = keysHeld.a = keysHeld.s = keysHeld.d = false;
+        mouseIsDown = false;
+        if (gameRunning && !paused) togglePause();
     });
 
     // --- Touch Controls (dual-zone) ---
@@ -2639,6 +2650,14 @@ function spawnExplosion(x, y) {
                 takeHealth();
                 playBoundaryHitSound();
                 const hitAngle = Math.atan2(e.y - playerY, e.x - playerX);
+                if (e.behavior === 'boss') {
+                    // Ramming the Blockmaster hurts, but it survives and is shoved back
+                    e.pushVx = Math.cos(hitAngle) * 14;
+                    e.pushVy = Math.sin(hitAngle) * 14;
+                    state.invincFrames = 30;
+                    circleHitFlashes.push({ angle: hitAngle, life: 18 });
+                    return true;
+                }
                 const impactX  = playerX + Math.cos(hitAngle) * 54;
                 const impactY  = playerY + Math.sin(hitAngle) * 54;
                 spawnBoundaryHit(impactX, impactY);
@@ -3482,9 +3501,9 @@ function spawnExplosion(x, y) {
         titleCardLevel.textContent = `LEVEL ${state.level}`;
         titleCardSub.textContent = state.level === 1 ? 'HOSTILES DETECTED' : (LEVEL_DESCS[state.level - 1] || 'REINFORCEMENTS INCOMING');
         playUiSound('levelup');
-        setTimeout(() => {
+        makePauseTimeout(() => {
             titleCard.classList.add('fadeout');
-            setTimeout(() => {
+            makePauseTimeout(() => {
                 titleCard.style.display = 'none';
                 titleCard.classList.remove('fadeout');
                 if (onDone) onDone();
@@ -3721,6 +3740,7 @@ function spawnExplosion(x, y) {
 
     function clearAllIntervals() {
         if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        activeLoop = null;
         gameRunning = false;
     }
 
@@ -3783,8 +3803,10 @@ function spawnExplosion(x, y) {
         paused      = false;
         timeScale = 1;
         startDrone();
+        activeLoop = null; // nothing to resume until the title card hands off
         showTitleCard(() => {
-            rafId = requestAnimationFrame(gameFrame);
+            activeLoop = gameFrame;
+            if (!paused) rafId = requestAnimationFrame(gameFrame);
         });
     }
 
@@ -3796,7 +3818,7 @@ function spawnExplosion(x, y) {
             pauseOverlay.style.display = 'none';
             lastTime = 0; // reset so dt doesn't jump after resume
             resumeAllTimers();
-            rafId = requestAnimationFrame(gameFrame);
+            if (activeLoop) rafId = requestAnimationFrame(activeLoop);
         } else {
             // Pause — cancel rAF, keep state
             if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
@@ -3816,6 +3838,7 @@ function spawnExplosion(x, y) {
         gameRunning = true;
         paused = false;
         moveAcc = 0; logicAcc = 0; spawnAcc = 0; lastTime = 0;
+        activeLoop = deployFrame;
         rafId = requestAnimationFrame(deployFrame);
     });
 
